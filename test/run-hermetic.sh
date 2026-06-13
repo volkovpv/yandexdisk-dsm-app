@@ -17,7 +17,8 @@
 #   - роутинг подкоманд version/rclone/start|stop/usage (T18);
 #   - граница ротации лога: ровно на лимите не ротируем (T19);
 #   - провал первого --resync => error/resync-failed (T21);
-#   - вывод и создание config.cfg подкомандой setup (T22);
+#   - вывод/создание config.cfg в setup; без tty не спрашивает (T22);
+#   - is_configured: conf без секции при заданном dir => not configured (T23);
 #   - golden-снимки человекочитаемого вывода (test/golden/).
 #
 # ПОРЯДОК СЦЕНАРИЕВ ЗНАЧИМ: T3 обязан идти ДО T4/T5 — те оставляют в хвосте
@@ -375,8 +376,24 @@ t22_setup_output() {
           sh "$YD" setup </dev/null) || fail "setup exit $?"
     case "$out" in *"rclone authorize"*) ;; *) fail "в setup нет шага авторизации rclone";; esac
     case "$out" in *"Task Scheduler"*)   ;; *) fail "в setup нет шага про Task Scheduler";; esac
+    # Без tty интерактивный вопрос задавать нельзя (иначе под Планировщиком зависнет).
+    case "$out" in *"Run interactive"*) fail "setup печатает интерактивный вопрос без tty";; *) ;; esac
     [ -f "$h/.config/yandex-disk/config.cfg" ] || fail "setup не создал config.cfg по умолчанию"
-    ok "setup: печатает инструкцию (authorize/Task Scheduler) и создаёт config.cfg по умолчанию"
+    ok "setup: инструкция (authorize/Task Scheduler), config.cfg по умолчанию, без tty не спрашивает интерактивно"
+}
+
+t23_configured_needs_section() {
+    T=T23
+    h="$WORK/t23home"
+    mkdir -p "$h/.config/rclone" "$h/.config/yandex-disk" "$WORK/t23local"
+    : > "$h/.config/rclone/rclone.conf"   # файл есть, но БЕЗ секции [..]
+    printf 'dir="%s"\nremote="yandexdisk:"\n' "$WORK/t23local" > "$h/.config/yandex-disk/config.cfg"
+    rc=0
+    out=$(YD_HOME="$h" YD_VAR="$WORK/t23var" YD_RCLONE_CONF="$h/.config/rclone/rclone.conf" \
+          sh "$YD" sync 2>&1) || rc=$?
+    [ "$rc" = 1 ] || fail "rc=$rc, ожидался 1 (conf без секции, хотя dir задан)"
+    case "$out" in *"not configured"*) ;; *) fail "нет 'not configured' при conf без секции";; esac
+    ok "rclone.conf без секции, но dir задан => 'not configured', rc=1"
 }
 
 # --- Golden-снимки наблюдаемого контракта (test/golden/) --------------------
@@ -452,6 +469,7 @@ t19_rotate_boundary
 t20_clean_thumbs
 t21_first_run_resync_fail
 t22_setup_output
+t23_configured_needs_section
 g01_status_configured
 g02_status_unconfigured
 g03_state_line_7field

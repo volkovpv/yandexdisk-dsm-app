@@ -4,7 +4,11 @@ DSM-пакет (.spk) «Яндекс Диск» для ARM64 Synology NAS: POSIX
 Полные правила: docs/deterministic-result-guideline.md и -2.md. Здесь — обязательный минимум.
 
 ## Гейты (после любой нетривиальной правки, до сдачи)
-    bash build.sh && bash test/run-hermetic.sh
+    bash build.sh && bash test/run-hermetic.sh && sh test/check-coverage.sh && bash test/check-reproducible.sh
+Мутационный гейт — `sh test/mutate.sh` (score ≥ YD_MUT_MIN, по умолч. 90; эквиваленты
+в test/mutate.equiv). Тяжёлый (~2 мин), поэтому on-demand / ночью (CI mutation.yml),
+а не на каждую правку. Пороги покрытия/мутации: YD_COV_MIN / YD_MUT_MIN.
+Полный справочник по запуску — docs/ai-workflow.md §1.
 Падает — чинить первопричину и перезапускать цепочку с начала. Глушить, ослаблять или
 обходить проверки запрещено. Правки build.sh, test/, .github/workflows/ — только
 отдельным PR, не вместе с кодом, который они проверяют.

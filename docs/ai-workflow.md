@@ -19,22 +19,35 @@
 | Команда | Что проверяет | Происхождение |
 |---|---|---|
 | `bash build.sh` | CRLF-гейт по всем sh-скриптам; `dash -n`; **блокирующий** `shellcheck -S warning`; `checkbashisms` (канон «только POSIX sh»); JSON `spk/conf/privilege`; **гейт дрейфа версий** (`test/check-version-drift.sh`); пиннинг rclone (2×SHA256); ELF-архитектура AArch64 — **жёсткий отказ**; **контракт маркеров** в бинаре rclone (`test/check-rclone-contract.sh`); воспроизводимая сборка `.spk` | W1, W4, W5 |
-| `bash test/run-hermetic.sh` | Поведение **без NAS и без живого rclone**: шим `test/fake-rclone` + `YD_*`-оверрайды. 17 сценариев: машина состояний `run_bisync` (T1–T5), окно счётчиков (T2), single-run guard (T6), ротация (T7), `is_configured`/`resolve_remote` (T8–T9), парсер `cfg()` (T10), 3/7-полевой `sync.state` (T11–T12), контракт CLI-флагов `_bisync` включая все 6 `--exclude`-масок (T13), golden-снимки `status`/`sync_state_line` (G1–G4, эталоны в `test/golden/`) | W2, W7 |
+| `bash test/run-hermetic.sh` | Поведение **без NAS и без живого rclone**: шим `test/fake-rclone` + `YD_*`-оверрайды. **27 сценариев** (T1–T23 + golden G1–G4): машина состояний `run_bisync` (T1–T5, провал первого `--resync` T21), окно счётчиков (T2), single-run guard (T6), ротация и её граница (T7, T19), `is_configured`/`resolve_remote` (T8–T9, T16–T17, T23), парсер `cfg()` (T10), 3/7-полевой `sync.state` (T11–T12), контракт CLI-флагов `_bisync` включая все 6 `--exclude`-масок (T13), кэш `rclone.version` (T14), второй триггер recovery (T15), роутинг подкоманд (T18), `clean_thumbs` (T20), `setup` (T22), golden-снимки (G1–G4, эталоны в `test/golden/`) | W2, W7 |
+| `sh test/check-coverage.sh` | Построчное **покрытие** `common.sh`+`yandex-disk` герметичным набором (трассировка bash, без внешних зависимостей). Печатает % и непокрытые строки; порог `YD_COV_MIN` (по умолч. **90 %**/файл). Достигнуто: common 100 %, yandex-disk 96 % | Фаза 1 |
 | `bash test/check-reproducible.sh` | Две чистые сборки → один SHA256 (rebuild-twice-and-compare) | W3 |
-| CI `.github/workflows/build-spk.yml` | Всё перечисленное на **каждый push любой ветки** и PR; actions запинены по commit-SHA | W6 |
+| `sh test/mutate.sh` | **Мутационный** гейт (аналог Stryker): детерминированные мутации ядра → каждая обязана уронить `run-hermetic.sh`. `mutation score = killed/(total−эквивалентные)`, порог `YD_MUT_MIN` (по умолч. **90**); вет­тированные эквиваленты — `test/mutate.equiv`. **Тяжёлый (~2 мин), on-demand/ночью**, не на каждый push | Фаза 2 |
+| CI `.github/workflows/build-spk.yml` | Статика + герметика + **покрытие** + воспроизводимость на **каждый push любой ветки** и PR; actions запинены по commit-SHA | W6 |
+| CI `.github/workflows/mutation.yml` | Мутационный гейт **ночью + по кнопке** (`workflow_dispatch`); неблокирующий, push не задерживает | Фаза 2 |
 | `CLAUDE.md` + `.github/CODEOWNERS` | Канон агента; защищённый периметр гейтов (`build.sh`, `test/`, workflows — отдельным PR) | W8, W9 |
 
 Уровень зрелости по карте Г-1 §12: **L2 достигнут** (поведение зафиксировано
 герметично и в CI), элементы L3 (канон-как-код, периметр гейтов).
 
-**Обязательная цепочка** (Definition of Done любой нетривиальной задачи):
+**Обязательная цепочка** (Definition of Done любой нетривиальной задачи) — то же,
+что гоняет CI на каждый push:
 
 ```bash
-bash build.sh && bash test/run-hermetic.sh && bash test/check-reproducible.sh
+bash build.sh && bash test/run-hermetic.sh && sh test/check-coverage.sh && bash test/check-reproducible.sh
 ```
 
-Красный шаг ⇒ чинится **первопричина в коде** и цепочка перезапускается с начала.
-Глушить/ослаблять/обходить проверки запрещено (Г-1 §0, §3; Г-2 §6).
+**Мутационный гейт — отдельно** (тяжёлый, ~2 мин; запускать перед сдачей значимой
+правки ядра или полагаться на ночной CI):
+
+```bash
+sh test/mutate.sh                 # порог YD_MUT_MIN (по умолч. 90)
+```
+
+Пороги переопределяются окружением: `YD_COV_MIN=95 sh test/check-coverage.sh`,
+`YD_MUT_MIN=100 sh test/mutate.sh`. Красный шаг ⇒ чинится **первопричина в коде**
+и цепочка перезапускается с начала. Глушить/ослаблять/обходить проверки запрещено
+(Г-1 §0, §3; Г-2 §6).
 
 Вне цепочки остаётся только живой NAS: `test-on-nas-install.sh` и
 `test-on-nas-functional.sh` — финальная ручная валидация **перед релизом**, она
@@ -278,15 +291,20 @@ remote); флаги воспроизводимости build.sh; изменен�
 ```
 CLAUDE.md                        канон агента (W8; текст Г-2 §3)
 .github/CODEOWNERS               периметр гейтов (W9)
-.github/workflows/build-spk.yml  CI: все ветки, SHA-пиннинг, hermetic+repro (W6)
+.github/workflows/build-spk.yml  CI: все ветки, SHA-пиннинг, hermetic+coverage+repro (W6)
+.github/workflows/mutation.yml   CI: мутационный гейт ночью + по кнопке (Фаза 2)
 build.sh                         тотальные статические гейты + герметичная среда (W1)
 test/fake-rclone                 resync-aware шим rclone (Г-2 §2.1)
-test/run-hermetic.sh             T1–T13 + golden G1–G4 (W2, W7)
+test/run-hermetic.sh             T1–T23 + golden G1–G4 (W2, W7; Фазы 0–1)
 test/check-rclone-contract.sh    маркеры в бинаре rclone (W4)
 test/check-version-drift.sh      версии INFO/CHANGELOG/RELEASE-INFO/README (W5)
 test/check-reproducible.sh       rebuild-twice-and-compare (W3)
+test/check-coverage.sh           покрытие ядра, порог YD_COV_MIN (Фаза 1)
+test/mutate.sh                   мутационный гейт, порог YD_MUT_MIN (Фаза 2)
+test/mutate.equiv                вет­тированные эквивалентные мутанты (Фаза 2)
 test/golden/*.txt                эталоны status / sync_state_line (W7)
 docs/ai-workflow.md              этот документ
+docs/test-quality-improvement.md покрытие/мутации: подход, пороги, история Фаз 0–2
 ```
 
 Не внедрено (осознанно, низкий приоритет / высокое усилие): T14 (логгер),
