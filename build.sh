@@ -43,11 +43,11 @@ SPK="YandexDisk-ARM-${VER}.spk"
 PKG_TGZ="spk/package.tgz"
 
 # rclone release pinned for this build (must stay in sync with INFO/README).
-RCLONE_VERSION="v1.74.2"
+RCLONE_VERSION="v1.74.3"
 RCLONE_ZIP="rclone-${RCLONE_VERSION}-linux-arm64.zip"
 RCLONE_ZIP_URL="https://downloads.rclone.org/${RCLONE_VERSION}/${RCLONE_ZIP}"
-RCLONE_ZIP_SHA256="bc2b2eb8269b743ed7bcea869f3782cfb4931e41efa53fc8befc6dc8308b7a50"  # official zip
-RCLONE_BIN_SHA256="1e87350a2c6d5dbbac7d5e8847cd95790791959fbc1151b25cb044dc64924508"  # extracted binary
+RCLONE_ZIP_SHA256="8f8d47446e061f80c3256659fe8e21f56d72d96aaefe1275d088ea5eb6b42aa7"  # official zip
+RCLONE_BIN_SHA256="646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17c923"  # extracted binary
 
 # #!/bin/sh scripts (incl. the sourced common.sh lib) -> validate with dash.
 # All package scripts are POSIX sh now (the old bash yandex-cleaner is gone).

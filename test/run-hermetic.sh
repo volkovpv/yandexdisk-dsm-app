@@ -240,7 +240,7 @@ t14_version_cache() {
     YD_HOME="$h" YD_VAR="$v" YD_RCLONE_CONF="$h/.config/rclone/rclone.conf" \
         sh "$YD" status >/dev/null || fail "status (промах кэша) exit $?"
     [ -f "$v/rclone.version" ] || fail "кэш rclone.version не записан при промахе"
-    grep -q 'rclone v1.74.2-fake' "$v/rclone.version" \
+    grep -q 'rclone v1.74.3-fake' "$v/rclone.version" \
         || fail "в кэше rclone.version не строка версии движка"
     # Попадание: прочитать кэш дословно, не порождая движок заново.
     printf 'CACHED-SENTINEL\n' > "$v/rclone.version"
@@ -300,9 +300,9 @@ t17_resolve_remote_ambiguous() {
 t18_subcommand_routing() {
     T=T18
     out=$(sh "$YD" version) || fail "version exit $?"
-    case "$out" in *"rclone v1.74.2-fake"*) ;; *) fail "version не делегировал движку: $out";; esac
+    case "$out" in *"rclone v1.74.3-fake"*) ;; *) fail "version не делегировал движку: $out";; esac
     out=$(sh "$YD" rclone version) || fail "rclone passthrough exit $?"
-    case "$out" in *"rclone v1.74.2-fake"*) ;; *) fail "rclone <args> не проброшен движку: $out";; esac
+    case "$out" in *"rclone v1.74.3-fake"*) ;; *) fail "rclone <args> не проброшен движку: $out";; esac
     out=$(sh "$YD" start) || fail "start exit $?"
     case "$out" in *"No resident daemon"*) ;; *) fail "start: нет 'No resident daemon'";; esac
     out=$(sh "$YD" stop) || fail "stop exit $?"

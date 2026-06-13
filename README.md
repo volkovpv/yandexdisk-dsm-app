@@ -22,7 +22,7 @@ yandex-disk).
 
 | | x86_64-версия | ARM-версия (эта) |
 |---|---|---|
-| Движок | `yandex-disk` (proprietary) | `rclone` v1.74.2 (open-source) |
+| Движок | `yandex-disk` (proprietary) | `rclone` v1.74.3 (open-source) |
 | Архитектура | x86_64 | aarch64 / ARM64 |
 | Команда `yandex-disk` | нативный бинарник | sh-обёртка над `rclone` |
 | Авторизация | `yandex-disk token` | OAuth через `rclone authorize` |

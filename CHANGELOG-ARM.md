@@ -19,6 +19,22 @@
 Версию для каждой задачи **определяет ИИ, выполняющий задачу**, исходя из
 характера изменений.
 
+## [1.2.2] (ARM) — 2026-06-13
+
+ПАТЧ: обновление движка `rclone` v1.74.2 → v1.74.3 (последний стабильный
+релиз). Скрипты пакета, работающие на NAS, не изменены; контракт лог-маркеров
+(счётчики `count_run_transfers` и авто-recovery) сохранён — все 6 маркеров
+подтверждены в новом бинаре гейтом `test/check-rclone-contract.sh`.
+
+### Changed
+- **Движок `rclone` v1.74.2 → v1.74.3.** В `build.sh` обновлены URL и обе
+  SHA-256 (zip — из официального `downloads.rclone.org/v1.74.3/SHA256SUMS`,
+  бинарник — хэш из проверенного по этой сумме zip). Версия движка
+  синхронизирована в `RELEASE-INFO-ARM.txt` и `README.md` (гейт
+  `check-version-drift.sh`). Шим `test/fake-rclone` и golden-эталоны
+  `status` (`test/golden/`) обновлены на `v1.74.3-fake`. Полный цикл гейтов
+  (build/hermetic/coverage/reproducible/mutation) — зелёный.
+
 ## [1.2.1] (ARM) — 2026-06-13
 
 Инфраструктура детерминизма (по `docs/deterministic-result-guideline*.md`):

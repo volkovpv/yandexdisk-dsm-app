@@ -18,7 +18,7 @@ set -u
 [ "${1:-}" = "--config" ] && [ "$#" -ge 2 ] && shift 2
 
 case "${1:-}" in
-  version) echo "rclone v1.74.2-fake"; exit 0 ;;
+  version) echo "rclone v1.74.3-fake"; exit 0 ;;
   bisync)
     log=""; prev=""; resync=0
     for a in "$@"; do
