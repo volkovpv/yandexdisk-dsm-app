@@ -5,11 +5,18 @@
 #   FAKE_RESYNC_RC   — exit-код bisync --resync; по умолчанию 0
 #   FAKE_SENT / FAKE_RECV / FAKE_MOD / FAKE_DEL — сколько маркеров дописать в --log-file
 #   FAKE_NEED_RESYNC=1 — дописать триггер recovery (только в инкрементальном прогоне)
+#   FAKE_RESYNC_MSG  — текст строки-триггера recovery; по умолчанию «cannot find prior listing»
 #   FAKE_ARGS_FILE   — если задан, сохранить туда аргументы bisync (по одному на строку)
 #
 # Маркеры обязаны совпадать с контрактом count_run_transfers() в
 # spk/package/yandex-disk (см. test/check-rclone-contract.sh).
 set -u
+
+# Настоящий rclone принимает глобальные флаги ДО подкоманды; passthrough «rclone»
+# в обёртке всегда добавляет «--config <path>». Снимаем ведущую пару --config,
+# чтобы подкоманда оказалась в $1 (нужно тесту роутинга подкоманд).
+[ "${1:-}" = "--config" ] && [ "$#" -ge 2 ] && shift 2
+
 case "${1:-}" in
   version) echo "rclone v1.74.2-fake"; exit 0 ;;
   bisync)
@@ -27,7 +34,7 @@ case "${1:-}" in
       emit 'Copied (replaced existing)' "${FAKE_MOD:-0}"
       emit 'Queue delete'               "${FAKE_DEL:-0}"
       if [ "$resync" -eq 0 ] && [ "${FAKE_NEED_RESYNC:-0}" = "1" ]; then
-        echo "cannot find prior listing" >>"$log"
+        echo "${FAKE_RESYNC_MSG:-cannot find prior listing}" >>"$log"
       fi
     fi
     if [ "$resync" -eq 1 ]; then exit "${FAKE_RESYNC_RC:-0}"; else exit "${FAKE_RC:-0}"; fi

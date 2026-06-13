@@ -33,6 +33,9 @@ jobs:
       - name: Hermetic behavioural tests (fake-rclone, no NAS)
         run: bash test/run-hermetic.sh
 
+      - name: Coverage gate (core scripts, bash xtrace, no NAS)
+        run: sh test/check-coverage.sh
+
       - name: Build .spk + static checks
         run: bash build.sh
 
