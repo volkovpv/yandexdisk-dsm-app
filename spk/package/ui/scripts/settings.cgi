@@ -13,14 +13,16 @@
 #   POST check-folder(тело)      -> JSON {exists,writable,owner}; тело = путь одной строкой
 #   POST sync                    -> запустить yandex-disk sync (детали — в журнале rclone)
 #
-# Привилегии (Phase 0 §3.1, §11.1): на NAS этот CGI исполняется как root, но конфиги
-# обязаны принадлежать sc-yandexdisk (rclone.conf 0600), а check-folder обязан мерить
-# право записи ИМЕННО для sc-yandexdisk (как root «-w» истинно почти всегда — ложь для
-# UI). Поэтому КАЖДЫЙ вызов обёртки идёт со сбросом привилегий: sudo -u sc-yandexdisk
-# (тот же путь, что у периодического sync в Планировщике задач). Герметичный тест
-# выставляет YD_RUNAS= (пусто): off-NAS такого пользователя нет и процесс уже
-# непривилегирован, обёртка зовётся напрямую (так YD_*-оверрайды теста доходят до неё —
-# sudo с env_reset их бы вычистил).
+# Привилегии (ИСПРАВЛЕНО 2026-06-20 по diag.cgi): 3rdparty-CGI исполняется как САМ
+# пользователь пакета sc-yandexdisk (conf/privilege: run-as: package; diag: euid=256139,
+# обе папки конфигов writable, файлы создаются sc-yandexdisk:synocommunity). Спайк Phase 0
+# (2026-06-14) ошибочно дал «root» — отсюда исходное (неверное) «sudo -u sc-yandexdisk».
+# Но sc-yandexdisk беспарольно sudo НЕ может: в контексте synoscgi sudo ждёт пароль и
+# ЗАВИСАЕТ -> весь дашборд падал на загрузке с HTTP 500 (get-config). Раз CGI уже = нужный
+# пользователь, privilege-drop НЕ нужен: ВСЕ операции (чтение/запись config.cfg и rclone.conf,
+# sync) идут НАПРЯМУЮ через yd(). Файлы сразу sc-yandexdisk-овые (rclone.conf 0600 читается
+# периодическим sync), без root и без chown. Никакого sudo — гейт check-ui-contract.sh это
+# стережёт, тест T44 проверяет чтение И запись при «отравленном» sudo на PATH.
 #
 # Безопасность (§6, §7): токен приходит ТОЛЬКО телом POST и стримится в stdin set-token
 # (read_body | yd set-token), НИКОГДА не в argv/QUERY_STRING/переменную/лог. Мутации
@@ -36,24 +38,26 @@ set -u
 # --- Расположение обёртки (self-relative, как common.sh у самой обёртки) ------
 # Установлено: target/ui/scripts/settings.cgi -> обёртка target/yandex-disk. YD_BIN
 # переопределяется в тестах/нестандартной установке; иначе вычисляется от $0.
-SELF_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd 2>/dev/null || echo /var/packages/YandexDisk/target/ui/scripts)
-PKG_TARGET=$(cd "$SELF_DIR/../.." 2>/dev/null && pwd 2>/dev/null || echo /var/packages/YandexDisk/target)
+# pwd -P ОБЯЗАТЕЛЕН (физический путь): DSM монтирует UI как симлинк
+# /usr/syno/synoman/webman/3rdparty/YandexDisk -> /var/packages/YandexDisk/target/ui,
+# и $0 приходит через него. С логическим pwd симлинк не разворачивается, и
+# "scripts/../.." уводит в .../webman/3rdparty (а не в target) => YD_BIN указывает на
+# несуществующий файл => обёртка не вызывается => HTTP 500. -P разворачивает симлинк.
+SELF_DIR=$(cd "$(dirname "$0")" 2>/dev/null && pwd -P 2>/dev/null || echo /var/packages/YandexDisk/target/ui/scripts)
+PKG_TARGET=$(cd "$SELF_DIR/../.." 2>/dev/null && pwd -P 2>/dev/null || echo /var/packages/YandexDisk/target)
 YD_BIN="${YD_BIN:-$PKG_TARGET/yandex-disk}"
+# Подстраховка: если self-relative резолв всё же промахнулся — известные пути установки
+# (usr-local-linker symlink, затем канонический target). Тесты задают YD_BIN явно.
+[ -x "$YD_BIN" ] || YD_BIN=/usr/local/bin/yandex-disk
+[ -x "$YD_BIN" ] || YD_BIN=/var/packages/YandexDisk/target/yandex-disk
 
-# Префикс сброса привилегий (см. шапку). UNSET => sudo (NAS, root); выставлено в пусто
-# тестом => прямой вызов обёртки в том же процессе (YD_*-окружение сохраняется).
-RUNAS="${YD_RUNAS-sudo -u sc-yandexdisk}"
-
-# yd <subcommand> [args...] — вызвать обёртку (со сбросом привилегий на NAS). stdin
-# проксируется как есть (sudo пробрасывает stdin) — это нужно set-token.
-yd() {
-    if [ -n "$RUNAS" ]; then
-        # shellcheck disable=SC2086  # RUNAS — доверенный константный префикс, ОБЯЗАН разбиться на слова
-        $RUNAS "$YD_BIN" "$@"
-    else
-        "$YD_BIN" "$@"
-    fi
-}
+# yd <subcommand> [args...] — вызвать обёртку НАПРЯМУЮ. CGI уже исполняется как
+# sc-yandexdisk (run-as: package; подтверждено diag.cgi), поэтому privilege-drop НЕ нужен:
+# и чтения (get-config/check-folder), и записи (set-folder/set-token), и sync идут как сам
+# пользователь пакета — файлы сразу sc-yandexdisk-овые. stdin проксируется как есть (нужно
+# set-token). НИКАКОГО sudo: именно он (sc-yandexdisk не может беспарольно sudo) и зависал
+# в synoscgi, обрушивая дашборд в HTTP 500.
+yd() { "$YD_BIN" "$@"; }
 
 # --- HTTP-ответ --------------------------------------------------------------
 # Заголовки в стиле существующих CGI (LF; webman принимает). Успех (200) — без

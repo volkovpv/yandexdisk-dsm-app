@@ -813,6 +813,76 @@ t43_settings_guards() {
     ok "settings.cgi гарды: POST без SynoToken=>403 (без мутации); GET-мутация/POST-чтение=>405; неизвестное=>400"
 }
 
+# T44 (регресс «HTTP 500: вкладка настроек не грузится / не сохраняет»): 3rdparty-CGI
+# исполняется как САМ пользователь пакета sc-yandexdisk (conf/privilege: run-as: package;
+# подтверждено diag.cgi euid=256139). Значит settings.cgi обязан звать обёртку НАПРЯМУЮ,
+# без sudo/privilege-drop: sc-yandexdisk не может беспарольно sudo, и в контексте synoscgi
+# sudo зависал -> весь дашборд падал в HTTP 500. Здесь на PATH кладём «отравленный» sudo
+# (всегда exit 1): если бы settings.cgi звал sudo для ЛЮБОГО действия — оно бы упало.
+# Чтение (get-config) И ЗАПИСЬ (set-token) обязаны пройти => CGI к sudo не обращается.
+t44_settings_no_sudo() {
+    T=T44
+    h="$WORK/t44home"; v="$WORK/t44var"; conf="$h/.config/rclone/rclone.conf"; loc="$WORK/t44local"
+    bin="$WORK/t44bin"
+    mkdir -p "$h/.config/rclone" "$h/.config/yandex-disk" "$loc" "$bin"
+    printf 'dir="%s"\nremote="yandexdisk:"\n' "$loc" > "$h/.config/yandex-disk/config.cfg"
+    # «Отравленный» sudo: любой его вызов = провал теста (settings.cgi не должен его звать).
+    printf '#!/bin/sh\necho "sudo: poisoned (settings.cgi must not call sudo)" >&2\nexit 1\n' > "$bin/sudo"
+    chmod +x "$bin/sudo"
+    secret="ya29.SENTINEL-T44-DO-NOT-LEAK"
+    # (a) READ get-config при отравленном sudo на PATH => 200 + конфиг (sudo не вызывался).
+    out=$(printf '' | PATH="$bin:$PATH" REQUEST_METHOD=GET QUERY_STRING="action=get-config" CONTENT_LENGTH=0 \
+        HTTP_X_SYNO_TOKEN="" YD_HOME="$h" YD_VAR="$v" YD_RCLONE_CONF="$conf" sh "$CGI") || fail "get-config exit $?"
+    printf '%s\n' "$out" | head -1 | grep -qi '^Content-Type: application/json' \
+        || fail "get-config не отдал json/200 при отравленном sudo (CGI всё ещё зовёт sudo): $out"
+    case "$out" in *"Status: 500"*) fail "get-config => 500 при отравленном sudo — CGI обращается к sudo";; esac
+    printf '%s' "$out" | grep -qF "\"dir\":\"$loc\"" || fail "get-config без dir: $out"
+    # (b) WRITE set-token при отравленном sudo => rclone.conf записан напрямую (sudo не вызывался).
+    body=$(printf '{"access_token":"%s"}' "$secret")
+    cl=$(printf '%s' "$body" | wc -c | tr -d ' ')
+    out=$(printf '%s' "$body" | PATH="$bin:$PATH" REQUEST_METHOD=POST QUERY_STRING="action=set-token" \
+        CONTENT_LENGTH="$cl" HTTP_X_SYNO_TOKEN="syno" \
+        YD_HOME="$h" YD_VAR="$v" YD_RCLONE_CONF="$conf" sh "$CGI") || fail "set-token exit $?"
+    printf '%s' "$out" | grep -qF '"ok":true' || fail "set-token не прошёл при отравленном sudo (CGI зовёт sudo на записи?): $out"
+    grep -q '^\[yandexdisk\]' "$conf" || fail "set-token не записал rclone.conf"
+    case "$out" in *"$secret"*) fail "СЕКРЕТ утёк в ответ set-token";; esac
+    ok "settings.cgi: чтение И запись идут БЕЗ sudo/privilege-drop (CGI=sc-yandexdisk; регресс HTTP 500 закрыт)"
+}
+
+# T45 (регресс «HTTP 500 через webman-симлинк»): DSM монтирует UI как симлинк
+# /usr/syno/synoman/webman/3rdparty/YandexDisk -> /var/packages/YandexDisk/target/ui, и
+# settings.cgi приходит через него. Путь к обёртке (YD_BIN) CGI вычисляет от $0; с
+# ЛОГИЧЕСКИМ pwd симлинк не разворачивается, "scripts/../.." уводит в webman/3rdparty,
+# YD_BIN -> несуществующий файл -> обёртка не вызвана -> HTTP 500 (наблюдалось на NAS).
+# Прежние T39-T44 это НЕ ловили: они задают YD_BIN явно, минуя резолв. Здесь
+# воспроизводим раскладку с симлинком и зовём CGI БЕЗ YD_BIN — резолв (pwd -P) обязан
+# найти обёртку и вернуть конфиг.
+t45_settings_via_webman_symlink() {
+    T=T45
+    tgt="$WORK/t45/target"; web="$WORK/t45/webman/3rdparty"
+    h="$WORK/t45/home"; v="$WORK/t45/var"; conf="$h/.config/rclone/rclone.conf"
+    mkdir -p "$tgt/ui/scripts" "$web" "$h/.config/rclone" "$h/.config/yandex-disk" "$v"
+    ln -s "$ROOT/spk/package/yandex-disk"             "$tgt/yandex-disk"
+    ln -s "$ROOT/spk/package/common.sh"              "$tgt/common.sh"
+    ln -s "$RCLONE"                                   "$tgt/rclone"
+    ln -s "$ROOT/spk/package/ui/scripts/settings.cgi" "$tgt/ui/scripts/settings.cgi"
+    ln -s "$tgt/ui" "$web/YandexDisk"                 # как DSM: webman/3rdparty/YandexDisk -> target/ui
+    printf 'dir="/volume1/work"\nremote="yandexdisk:"\n' > "$h/.config/yandex-disk/config.cfg"
+    printf '[yandexdisk]\ntype = yandex\ntoken = {"access_token":"%s"}\n' "ya29.SENTINEL-T45" > "$conf"
+    # Зов ЧЕРЕЗ СИМЛИНК и БЕЗ YD_BIN — резолв обёртки обязан сработать сам.
+    out=$(printf '' | REQUEST_METHOD=GET QUERY_STRING='action=get-config' CONTENT_LENGTH=0 \
+        YD_HOME="$h" YD_VAR="$v" YD_RCLONE_CONF="$conf" \
+        sh "$web/YandexDisk/scripts/settings.cgi" 2>&1) || fail "settings.cgi exit $?"
+    printf '%s\n' "$out" | head -1 | grep -qi '^Content-Type: application/json' \
+        || fail "через webman-симлинк CGI не отдал json/200 (YD_BIN не разрезолвился): $out"
+    case "$out" in *"Status: 500"*) fail "через webman-симлинк => 500 (YD_BIN мимо обёртки)";; esac
+    printf '%s' "$out" | grep -qF '"dir":"/volume1/work"' \
+        || fail "через webman-симлинк get-config не вернул конфиг (обёртка не найдена): $out"
+    printf '%s' "$out" | grep -qF '"token_configured":true' || fail "token_configured!=true: $out"
+    case "$out" in *"ya29.SENTINEL-T45"*) fail "СЕКРЕТ утёк в ответ get-config";; esac
+    ok "settings.cgi через webman-симлинк (без YD_BIN): YD_BIN резолвится (pwd -P), конфиг прочитан"
+}
+
 # --- Golden-снимки наблюдаемого контракта (test/golden/) --------------------
 # Фиксируют ТОЧНЫЙ человекочитаемый вывод, который видят пользователь и UI.
 # Переменные части нормализуются: путь WORK -> <WORK>, таймстемп -> <TS>.
@@ -950,6 +1020,8 @@ t40_settings_set_folder
 t41_settings_set_token
 t42_settings_check_folder
 t43_settings_guards
+t44_settings_no_sudo
+t45_settings_via_webman_symlink
 g01_status_configured
 g02_status_unconfigured
 g03_state_line_7field
