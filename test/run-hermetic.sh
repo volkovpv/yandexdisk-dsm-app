@@ -698,6 +698,121 @@ t38_check_folder() {
     ok "check-folder: каталог=>exists/writable=1; файл=>writable=0; отсутствует=>0/0/owner=?; без арг=>rc2"
 }
 
+# --- Phase 2: тонкий CGI settings.cgi (вкладка settings = имя CGI) -----------
+# CGI — только парсер HTTP: разбирает метод/действие/тело и ДЕЛЕГИРУЕТ в обёртку
+# yandex-disk (как на NAS). Эмулируем webman: REQUEST_METHOD/QUERY_STRING/CONTENT_LENGTH/
+# stdin + SynoToken. YD_RUNAS= отключает sudo off-NAS (обёртка зовётся напрямую, YD_*-
+# оверрайды доходят; sudo с env_reset их бы вычистил). Инварианты: токен только телом->
+# stdin и НЕ в ответе; мутации требуют SynoToken (CSRF); get-config => JSON без токена.
+CGI="$ROOT/spk/package/ui/scripts/settings.cgi"
+
+# scgi <method> <query> <synotoken> <body> — вызвать settings.cgi как webman и напечатать
+# его ответ. CONTENT_LENGTH считается в БАЙТАХ (важно для UTF-8). Тело идёт в stdin
+# (секрет НЕ через argv процесса: printf — builtin, передача телом — в pipe). Окружение
+# пакета — h/v/conf (как в остальных сценариях); RCLONE экспортирован глобально.
+scgi() {
+    _cl=$(printf '%s' "$4" | wc -c | tr -d ' ')
+    printf '%s' "$4" | REQUEST_METHOD="$1" QUERY_STRING="$2" CONTENT_LENGTH="$_cl" \
+        HTTP_X_SYNO_TOKEN="$3" YD_RUNAS='' \
+        YD_HOME="$h" YD_VAR="$v" YD_RCLONE_CONF="$conf" \
+        sh "$CGI"
+}
+
+t39_settings_get_config() {
+    T=T39
+    h="$WORK/t39home"; v="$WORK/t39var"; loc="$WORK/t39local"; conf="$h/.config/rclone/rclone.conf"
+    mkdir -p "$h/.config/rclone" "$h/.config/yandex-disk" "$loc"
+    secret="ya29.SENTINEL-DO-NOT-LEAK-CGI-GET"
+    printf '[yandexdisk]\ntype = yandex\ntoken = {"access_token":"%s"}\n' "$secret" > "$conf"
+    printf 'dir="%s"\nremote="yandexdisk:/Sub"\nclean_thumbs=1\n' "$loc" > "$h/.config/yandex-disk/config.cfg"
+    out=$(scgi GET "action=get-config" "" "") || fail "settings.cgi GET get-config exit $?"
+    printf '%s\n' "$out" | head -1 | grep -qi '^Content-Type: application/json' \
+        || fail "get-config: нет заголовка application/json: $out"
+    case "$out" in *"$secret"*) fail "СЕКРЕТ утёк в ответ settings.cgi get-config";; *) ;; esac
+    printf '%s' "$out" | grep -qF "\"dir\":\"$loc\""           || fail "get-config JSON без dir=$loc: $out"
+    printf '%s' "$out" | grep -qF '"remote":"yandexdisk:/Sub"' || fail "get-config JSON: неверный remote: $out"
+    printf '%s' "$out" | grep -qF '"clean_thumbs":"1"'         || fail "get-config JSON: неверный clean_thumbs: $out"
+    printf '%s' "$out" | grep -qF '"token_configured":true'    || fail "get-config JSON: token_configured!=true: $out"
+    ok "settings.cgi GET get-config => application/json, поля верны, токен НЕ в ответе (только флаг true)"
+}
+
+t40_settings_set_folder() {
+    T=T40
+    h="$WORK/t40home"; v="$WORK/t40var"; loc="$WORK/t40local"; conf="$h/.config/rclone/rclone.conf"
+    mkdir -p "$h/.config/yandex-disk" "$loc"
+    cfgf="$h/.config/yandex-disk/config.cfg"
+    # (a) валидное тело из 3 строк => делегирование set-folder => config.cfg (round-trip).
+    body=$(printf '%s\nyandexdisk:/Backup\n1' "$loc")
+    out=$(scgi POST "action=set-folder" syno "$body") || fail "set-folder exit $?"
+    printf '%s' "$out" | grep -qF '"ok":true' || fail "set-folder: нет ok:true: $out"
+    [ -f "$cfgf" ] || fail "set-folder: config.cfg не создан"
+    [ "$(cfg_probe "$h" dir)" = "$loc" ]                  || fail "set-folder dir round-trip: $(cfg_probe "$h" dir)"
+    [ "$(cfg_probe "$h" remote)" = "yandexdisk:/Backup" ] || fail "set-folder remote round-trip: $(cfg_probe "$h" remote)"
+    [ "$(cfg_probe "$h" clean_thumbs)" = 1 ]              || fail "set-folder clean_thumbs round-trip"
+    # (b) относительный dir => обёртка rc=2 => CGI Status 400, config.cfg НЕ перезаписан.
+    before=$(cat "$cfgf")
+    out=$(scgi POST "action=set-folder" syno "relative/path") || fail "set-folder(bad) exit $?"
+    printf '%s\n' "$out" | head -1 | grep -qi '^Status: 400' || fail "относительный dir: нет Status 400: $out"
+    printf '%s' "$out" | grep -qF '"ok":false' || fail "относительный dir: нет ok:false: $out"
+    [ "$(cat "$cfgf")" = "$before" ] || fail "config.cfg перезаписан при отказе валидации"
+    ok "settings.cgi POST set-folder: 3-строчное тело => config.cfg (round-trip); относительный путь => 400, конфиг цел"
+}
+
+t41_settings_set_token() {
+    T=T41
+    h="$WORK/t41home"; v="$WORK/t41var"; conf="$h/.config/rclone/rclone.conf"
+    mkdir -p "$h/.config/rclone"
+    secret="ya29.SENTINEL-SECRET-CGI-SET-TOKEN"
+    body=$(printf '{"access_token":"%s","token_type":"OAuth"}' "$secret")
+    out=$(scgi POST "action=set-token" syno "$body") || fail "set-token exit $?"
+    case "$out" in *"$secret"*) fail "СЕКРЕТ утёк в ответ settings.cgi set-token";; *) ;; esac
+    printf '%s' "$out" | grep -qF '"ok":true' || fail "set-token: нет ok:true: $out"
+    [ -f "$conf" ] || fail "set-token: rclone.conf не создан"
+    grep -q '^\[yandexdisk\]' "$conf" || fail "set-token: нет секции [yandexdisk]"
+    grep -qF "$secret" "$conf"          || fail "set-token: токен не записан в rclone.conf"
+    perm=$(ls -l "$conf" | awk 'NR==1{print $1}')
+    case "$perm" in -rw-------*) ;; *) fail "rclone.conf режим не 0600: $perm";; esac
+    ok "settings.cgi POST set-token: rclone.conf [yandexdisk]+токен 0600; секрет НЕ в ответе CGI"
+}
+
+t42_settings_check_folder() {
+    T=T42
+    h="$WORK/t42home"; v="$WORK/t42var"; conf="$h/.config/rclone/rclone.conf"
+    mkdir -p "$h/.config/yandex-disk" "$WORK/t42dir"
+    # существующий каталог => exists/writable true + owner.
+    out=$(scgi POST "action=check-folder" syno "$WORK/t42dir") || fail "check-folder exit $?"
+    printf '%s' "$out" | grep -qF '"exists":true'   || fail "check-folder(dir): нет exists:true: $out"
+    printf '%s' "$out" | grep -qF '"writable":true' || fail "check-folder(dir): нет writable:true: $out"
+    printf '%s' "$out" | grep -qF '"owner":'        || fail "check-folder(dir): нет owner: $out"
+    # отсутствующий путь => exists/writable false.
+    out=$(scgi POST "action=check-folder" syno "$WORK/t42missing") || fail "check-folder(absent) exit $?"
+    printf '%s' "$out" | grep -qF '"exists":false'   || fail "check-folder(absent): нет exists:false: $out"
+    printf '%s' "$out" | grep -qF '"writable":false' || fail "check-folder(absent): нет writable:false: $out"
+    ok "settings.cgi POST check-folder => JSON exists/writable/owner (каталог true/true; отсутствует false/false)"
+}
+
+t43_settings_guards() {
+    T=T43
+    h="$WORK/t43home"; v="$WORK/t43var"; conf="$h/.config/rclone/rclone.conf"
+    mkdir -p "$h/.config/yandex-disk"
+    cfgf="$h/.config/yandex-disk/config.cfg"
+    # (a) CSRF: POST set-folder БЕЗ SynoToken => 403, мутации нет (config.cfg не создан).
+    out=$(scgi POST "action=set-folder" "" "/whatever") || fail "csrf-case exit $?"
+    printf '%s\n' "$out" | head -1 | grep -qi '^Status: 403' || fail "POST без SynoToken: нет Status 403: $out"
+    [ ! -f "$cfgf" ] || fail "мутация прошла без SynoToken (CSRF не сработал)"
+    # (b) метод: GET на мутацию => 405; POST на чтение get-config => 405.
+    out=$(scgi GET "action=set-folder" syno "") || fail "method-case1 exit $?"
+    printf '%s\n' "$out" | head -1 | grep -qi '^Status: 405' || fail "GET set-folder: нет Status 405: $out"
+    out=$(scgi POST "action=get-config" syno "") || fail "method-case2 exit $?"
+    printf '%s\n' "$out" | head -1 | grep -qi '^Status: 405' || fail "POST get-config: нет Status 405: $out"
+    # (c) неизвестное/пустое действие => 400.
+    out=$(scgi GET "action=bogus" "" "") || fail "unknown-action exit $?"
+    printf '%s\n' "$out" | head -1 | grep -qi '^Status: 400' || fail "неизвестное действие: нет Status 400: $out"
+    out=$(scgi GET "" "" "") || fail "empty-action exit $?"
+    printf '%s\n' "$out" | head -1 | grep -qi '^Status: 400' || fail "пустое действие: нет Status 400: $out"
+    ok "settings.cgi гарды: POST без SynoToken=>403 (без мутации); GET-мутация/POST-чтение=>405; неизвестное=>400"
+}
+
 # --- Golden-снимки наблюдаемого контракта (test/golden/) --------------------
 # Фиксируют ТОЧНЫЙ человекочитаемый вывод, который видят пользователь и UI.
 # Переменные части нормализуются: путь WORK -> <WORK>, таймстемп -> <TS>.
@@ -780,6 +895,17 @@ g06_get_config() {
     golden_cmp get-config.txt "$WORK/actual"
 }
 
+g07_settings_get_config() {
+    T=G7
+    h="$WORK/g7home"; v="$WORK/g7var"; loc="$WORK/g7local"; conf="$h/.config/rclone/rclone.conf"
+    mkdir -p "$h/.config/rclone" "$h/.config/yandex-disk" "$loc"
+    # Токен-сентинел в conf: golden фиксирует, что settings.cgi его НЕ печатает (флаг true).
+    printf '[yandexdisk]\ntype = yandex\ntoken = {"access_token":"SENTINEL"}\n' > "$conf"
+    printf 'dir="%s"\nremote="yandexdisk:"\nclean_thumbs=0\n' "$loc" > "$h/.config/yandex-disk/config.cfg"
+    scgi GET "action=get-config" "" "" | norm > "$WORK/actual"
+    golden_cmp settings-get-config.txt "$WORK/actual"
+}
+
 echo "== Герметичный прогон: fake-rclone + YD_*-оверрайды (WORK=$WORK) =="
 t01_first_run_resync
 t02_counter_window
@@ -819,11 +945,17 @@ t35_set_token_writes
 t36_set_token_rejects
 t37_get_config
 t38_check_folder
+t39_settings_get_config
+t40_settings_set_folder
+t41_settings_set_token
+t42_settings_check_folder
+t43_settings_guards
 g01_status_configured
 g02_status_unconfigured
 g03_state_line_7field
 g04_state_line_3field
 g05_diag_not_writable
 g06_get_config
+g07_settings_get_config
 
 echo "ВСЕ ПРОВЕРКИ ПРОЙДЕНЫ"
