@@ -1,41 +1,231 @@
-.yandex-disk-app {
+/* Дашборд пакета «Яндекс Диск» (Phase 3, план docs/ui-config-migration-plan.md §7).
+ *
+ * Раскладка повторяет Synology Hyper Backup (design/example_1.png): мастер-детейл —
+ * слева боковая панель со списком папок, справа детали (шапка статуса + две карточки).
+ * Эталон вёрстки — design/prototype/index.html; спецификация — design/spec.md.
+ *
+ * Все правила НАМЕРЕННО ограничены префиксом .yd-* и корнем .yd-app: стиль внедряется
+ * в общую страницу DSM, поэтому «голые» селекторы (body/.card/input) сломали бы саму
+ * DSM. Любой новый селектор обязан начинаться с .yd-app, иначе он протечёт наружу. */
+
+.yd-app {
+  position: relative;            /* якорь для оверлея модалок (.yd-overlay inset:0) */
   height: 100%;
   display: flex;
-  flex-direction: column;
-}
-
-.top-buttons {
-  display: flex;
-  gap: 12px;
-  padding: 8px 16px 8px 19px;
-  background-color: #f4f4f4;
-  border-bottom: 1px solid #ccc;
-}
-
-.content-area {
-  flex-grow: 1;
-  padding: 13px 19px;
-  font-size: 16px;
-  overflow-y: auto;
-  outline: none;
-}
-
-.result {
-  white-space: pre-wrap;
-  font-family: monospace;
-  user-select: text;
-  cursor: text;
-}
-
-.tab-caption {
-  padding: 6px 19px;
+  min-height: 0;
+  color: #333;
   font-size: 13px;
-  color: #767676;
-  background-color: #fafafa;
-  border-bottom: 1px solid #eee;
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+}
+.yd-app *, .yd-app *::before, .yd-app *::after { box-sizing: border-box; }
+
+/* ---- Иконки (Feather, currentColor) ---- */
+.yd-app .yd-ic { width: 16px; height: 16px; display: block; }
+
+/* ---- Боковая панель ---- */
+.yd-app .yd-sidebar {
+  width: 216px; flex: 0 0 216px; background: #f4f5f6; border-right: 1px solid #e2e4e7;
+  display: flex; flex-direction: column; min-height: 0;
+}
+.yd-app .yd-sb-toolbar { display: flex; gap: 8px; padding: 10px; border-bottom: 1px solid #e6e8ea; }
+.yd-app .yd-tool-btn {
+  width: 36px; height: 30px; border-radius: 4px; border: 1px solid #d6d9dd; background: #fff;
+  display: flex; align-items: center; justify-content: center; color: #5a6068; cursor: pointer;
+}
+.yd-app .yd-tool-btn:hover { background: #eef1f4; }
+.yd-app .yd-tool-btn .yd-ic { width: 18px; height: 18px; }
+.yd-app .yd-tool-btn.primary { background: #2d7fd9; border-color: #2d7fd9; color: #fff; }
+.yd-app .yd-tool-btn.primary:hover { background: #256fc4; }
+.yd-app .yd-tool-btn.disabled { opacity: .5; cursor: not-allowed; background: #eef0f2; color: #a3a8ad; border-color: #e2e4e7; }
+
+.yd-app .yd-folder-list { flex: 1; overflow: auto; padding: 6px; }
+.yd-app .yd-folder-item {
+  display: flex; align-items: center; gap: 9px; padding: 9px 8px; border-radius: 4px;
+  cursor: default; margin-bottom: 2px;
+}
+.yd-app .yd-folder-item.active { background: #e1effb; box-shadow: inset 3px 0 0 #2d7fd9; }
+.yd-app .yd-fi-icon .yd-ic { width: 18px; height: 18px; color: #7b828a; }
+.yd-app .yd-fi-name {
+  flex: 1; font-size: 13px; color: #3a3f45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* "Очистить" lives at the right end of the tab bar (flex header), not floating. */
-.clear-logs-btn {
-  margin-left: auto;
+/* ---- Бейджи статуса ---- */
+.yd-app .yd-badge {
+  width: 18px; height: 18px; border-radius: 50%; display: inline-flex; align-items: center;
+  justify-content: center; flex: 0 0 18px; color: #fff;
+}
+.yd-app .yd-badge .yd-ic { width: 11px; height: 11px; stroke-width: 3.2; }
+.yd-app .yd-big-badge {
+  width: 52px; height: 52px; border-radius: 50%; flex: 0 0 52px; display: flex;
+  align-items: center; justify-content: center; color: #fff;
+}
+.yd-app .yd-big-badge .yd-ic { width: 28px; height: 28px; stroke-width: 3; }
+.yd-app .yd-st-success  { background: #43b14b; }
+.yd-app .yd-st-warning  { background: #f0a020; }
+.yd-app .yd-st-error    { background: #e24c3d; }
+.yd-app .yd-st-syncing  { background: #2d8cf0; }
+.yd-app .yd-st-awaiting { background: #9e9e9e; }
+
+.yd-app .yd-spinner {
+  width: 12px; height: 12px; border: 2px solid rgba(255,255,255,.45); border-top-color: #fff;
+  border-radius: 50%; animation: yd-spin .8s linear infinite; display: inline-block;
+}
+.yd-app .yd-spinner.big { width: 26px; height: 26px; border-width: 3px; }
+@keyframes yd-spin { to { transform: rotate(360deg); } }
+
+/* ---- Основная область (детали) ---- */
+.yd-app .yd-detail {
+  flex: 1; background: #ececec; padding: 16px; overflow: auto; display: flex;
+  flex-direction: column; gap: 16px; min-width: 0;
+}
+.yd-app .yd-card { background: #fff; border: 1px solid #e3e5e8; border-radius: 6px; padding: 18px 20px; }
+.yd-app .yd-header-card { display: flex; gap: 18px; align-items: flex-start; }
+.yd-app .yd-hc-body { flex: 1; min-width: 0; }
+.yd-app .yd-hc-title { font-size: 20px; font-weight: 600; color: #2c2f33; margin-bottom: 6px; }
+.yd-app .yd-muted { color: #6b7178; margin: 2px 0; }
+.yd-app .yd-link { color: #2d7fd9; cursor: pointer; text-decoration: none; }
+.yd-app .yd-link:hover { text-decoration: underline; }
+.yd-app .yd-note-warn { color: #a9740a; margin: 5px 0; }
+.yd-app .yd-note-err { color: #cf3b2e; margin: 5px 0; }
+.yd-app .yd-hc-actions { display: flex; align-items: center; gap: 8px; margin-top: 15px; flex-wrap: wrap; }
+
+/* ---- Кнопки ---- */
+.yd-app .yd-btn {
+  border: none; border-radius: 4px; padding: 8px 14px; font-size: 13px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 7px; font-family: inherit;
+}
+.yd-app .yd-btn .yd-ic { width: 15px; height: 15px; }
+.yd-app .yd-btn-primary { background: #2d7fd9; color: #fff; }
+.yd-app .yd-btn-primary:hover { background: #256fc4; }
+.yd-app .yd-btn-primary:disabled { background: #a9c8ec; cursor: default; }
+.yd-app .yd-btn-secondary { background: #fff; border: 1px solid #cdd1d6; color: #444; }
+.yd-app .yd-btn-secondary:hover { background: #f2f4f6; }
+.yd-app .yd-btn-secondary:disabled { color: #a3a8ad; cursor: default; }
+.yd-app .yd-btn-ghost { background: transparent; border: 1px solid #e0c98a; color: #a9740a; }
+.yd-app .yd-btn-ghost:disabled { opacity: .65; cursor: not-allowed; }
+.yd-app .yd-icon-btn {
+  width: 34px; height: 34px; border-radius: 4px; border: 1px solid #d6d9dd; background: #fff;
+  color: #5a6068; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+}
+.yd-app .yd-icon-btn:hover { background: #eef1f4; }
+.yd-app .yd-icon-btn .yd-ic { width: 17px; height: 17px; }
+.yd-app .yd-icon-btn.danger:hover { background: #fdecea; color: #cf3b2e; border-color: #f3c0ba; }
+.yd-app .yd-icon-btn:disabled { opacity: .45; cursor: not-allowed; background: #f3f4f5; }
+.yd-app .yd-icon-btn:disabled:hover { background: #f3f4f5; color: #5a6068; border-color: #d6d9dd; }
+
+/* ---- Нижние карточки ---- */
+.yd-app .yd-detail-bottom { display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap; }
+.yd-app .yd-detail-bottom .yd-card { flex: 1 1 280px; display: flex; flex-direction: column; min-width: 0; }
+.yd-app .yd-card-title {
+  font-size: 15px; font-weight: 600; color: #2c2f33; margin-bottom: 14px;
+  padding-bottom: 10px; border-bottom: 1px solid #eef0f2;
+}
+.yd-app .yd-kv { display: flex; margin: 9px 0; font-size: 13px; gap: 12px; }
+.yd-app .yd-kv .k { color: #8a9098; flex: 0 0 46%; }
+.yd-app .yd-kv .v { color: #3a3f45; flex: 1; word-break: break-word; }
+.yd-app .yd-ok { color: #3a9d42; }
+.yd-app .yd-bad { color: #cf3b2e; }
+.yd-app .yd-card-foot { margin-top: auto; padding-top: 14px; }
+
+/* ---- Пустое состояние (первый запуск) ---- */
+.yd-app .yd-empty-state {
+  flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; color: #6b7178; gap: 8px; padding: 24px;
+}
+.yd-app .yd-empty-illu { position: relative; color: #c2c7cd; margin-bottom: 6px; }
+.yd-app .yd-empty-illu .yd-ic { width: 84px; height: 84px; }
+.yd-app .yd-empty-plus {
+  position: absolute; right: -8px; bottom: -2px; background: #2d7fd9; color: #fff; border-radius: 50%;
+  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; border: 3px solid #ececec;
+}
+.yd-app .yd-empty-plus .yd-ic { width: 16px; height: 16px; }
+.yd-app .yd-empty-title { font-size: 18px; font-weight: 600; color: #3a3f45; }
+.yd-app .yd-empty-text { max-width: 400px; line-height: 1.5; }
+.yd-app .yd-empty-state .yd-btn { margin-top: 10px; }
+
+/* ---- Модальные окна ---- */
+.yd-app .yd-overlay {
+  position: absolute; inset: 0; background: rgba(20,24,28,.4); display: flex;
+  align-items: center; justify-content: center; z-index: 20; padding: 16px;
+}
+.yd-app .yd-modal {
+  width: 580px; max-width: 100%; max-height: 100%; background: #fff; border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.4); display: flex; flex-direction: column; overflow: hidden;
+}
+.yd-app .yd-modal.wide { width: 680px; }
+.yd-app .yd-modal-head {
+  display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid #e8eaed;
+  font-weight: 600; font-size: 15px; color: #2c2f33;
+}
+.yd-app .yd-modal-head .x {
+  margin-left: auto; border: none; background: none; font-size: 15px; color: #9aa0a6;
+  cursor: pointer; width: 26px; height: 26px; border-radius: 4px;
+}
+.yd-app .yd-modal-head .x:hover { background: #eef0f2; color: #555; }
+.yd-app .yd-modal-body { padding: 18px; overflow: auto; }
+.yd-app .yd-modal-foot {
+  display: flex; justify-content: flex-end; gap: 10px; padding: 14px 18px;
+  border-top: 1px solid #e8eaed; background: #fafbfc;
+}
+
+/* ---- Форма ---- */
+.yd-app .yd-frow { margin-bottom: 16px; }
+.yd-app .yd-frow > label { display: block; font-weight: 600; margin-bottom: 6px; color: #3a3f45; }
+.yd-app input[type=text],
+.yd-app input[type=number],
+.yd-app textarea {
+  width: 100%; border: 1px solid #cdd1d6; border-radius: 4px; padding: 8px 10px;
+  font-size: 13px; font-family: inherit; color: #333;
+}
+.yd-app textarea { resize: vertical; }
+.yd-app input:focus, .yd-app textarea:focus {
+  outline: none; border-color: #2d7fd9; box-shadow: 0 0 0 2px rgba(45,127,217,.18);
+}
+.yd-app .yd-inline { display: flex; gap: 8px; }
+.yd-app .yd-inline input { flex: 1; }
+.yd-app .yd-inline-between { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+.yd-app .yd-hint { font-size: 12px; color: #8a9098; margin-top: 6px; line-height: 1.45; }
+.yd-app code {
+  background: #f1f3f5; border: 1px solid #e4e7ea; border-radius: 3px; padding: 1px 5px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; color: #456;
+}
+.yd-app .yd-ok-hint { color: #3a9d42; }
+.yd-app .yd-bad-hint { color: #cf3b2e; }
+.yd-app .yd-field-err { color: #cf3b2e; font-size: 12px; margin-top: 6px; }
+.yd-app .yd-form-err {
+  color: #cf3b2e; background: #fdecea; border: 1px solid #f3c0ba; border-radius: 5px;
+  padding: 8px 10px; margin-bottom: 14px; font-size: 12.5px;
+}
+.yd-app .yd-section-title {
+  font-weight: 600; color: #2c2f33; margin: 20px 0 10px; padding-top: 14px; border-top: 1px solid #eef0f2;
+}
+.yd-app .yd-switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.yd-app .yd-switch { position: relative; display: inline-block; width: 42px; height: 24px; flex: 0 0 42px; }
+.yd-app .yd-switch input { display: none; }
+.yd-app .yd-slider { position: absolute; inset: 0; background: #c6cbd1; border-radius: 24px; transition: .2s; cursor: pointer; }
+.yd-app .yd-slider:before {
+  content: ""; position: absolute; width: 18px; height: 18px; left: 3px; top: 3px; background: #fff;
+  border-radius: 50%; transition: .2s;
+}
+.yd-app .yd-switch input:checked + .yd-slider { background: #2d7fd9; }
+.yd-app .yd-switch input:checked + .yd-slider:before { transform: translateX(18px); }
+.yd-app .yd-radio { display: flex; align-items: center; gap: 8px; margin: 8px 0; color: #3a3f45; }
+.yd-app .yd-radio.disabled { color: #9aa0a6; }
+.yd-app .yd-num { width: 64px !important; display: inline-block; }
+.yd-app .yd-pill {
+  background: #fff3d6; color: #a9740a; border: 1px solid #ecd49a; border-radius: 10px;
+  padding: 1px 8px; font-size: 11px; font-weight: 600;
+}
+.yd-app .yd-connected-box {
+  background: #eef8ef; border: 1px solid #cfe9d1; border-radius: 5px; padding: 10px 12px;
+  color: #3a9d42; margin-bottom: 10px;
+}
+.yd-app .yd-sched-hint {
+  background: #f7f9fa; border: 1px solid #e8ebee; border-radius: 5px; padding: 8px 10px; margin: 4px 0 12px;
+  font-size: 12px; color: #6b7178; line-height: 1.5;
+}
+.yd-app pre.yd-log {
+  background: #1e2227; color: #cdd3da; border-radius: 5px; padding: 12px;
+  font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55;
+  overflow: auto; max-height: 360px; white-space: pre-wrap; word-break: break-word; margin: 0;
 }
