@@ -4,8 +4,8 @@
 
 Package           : YandexDisk
 Display name      : Yandex Disk (ARM)
-Version           : 1.2.3  (SemVer; "ARM" в displayname, т.к. версия для DSM — только числовая. См. CHANGELOG-ARM.md -> «Версионирование»)
-Build date        : 2026-06-13
+Version           : 2.0.3  (SemVer; "ARM" в displayname, т.к. версия для DSM — только числовая. См. CHANGELOG-ARM.md -> «Версионирование»)
+Build date        : 2026-06-20
 DSM minimum       : 7.0-40000
 
 ----------------------------------------------------------------
@@ -40,9 +40,9 @@ rtd1619b rtd1296 armada37xx armada38x alpine4k
 ----------------------------------------------------------------
 ARTIFACT
 ----------------------------------------------------------------
-File              : YandexDisk-ARM-1.2.3.spk   (GitHub Release asset — НЕ в git)
-Size              : 24340480 bytes (~23 MB)
-SHA-256 (.spk)    : 8b3d37302194c5723f42a10d038eb583012e19dd88da4218a9b6d3229f585a7f
+File              : YandexDisk-ARM-2.0.3.spk   (GitHub Release asset — НЕ в git)
+Size              : 24360960 bytes (~23 MB)
+SHA-256 (.spk)    : fb5f7e7c1d492f479643cc6cd17d7945abde77cd1c0d6c9d298ccef3af941b9c
 SHA-256 (rclone)  : 646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17c923
 
 Имя файла .spk     : содержит версию (YandexDisk-ARM-<версия>.spk) — собирается
@@ -54,21 +54,23 @@ SHA-256 (rclone)  : 646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17
                     так что этот SHA-256 повторяется при чистой пересборке.
 
 Verify:
-    sha256sum -c YandexDisk-ARM-1.2.3.spk.sha256
+    sha256sum -c YandexDisk-ARM-2.0.3.spk.sha256
 
 ----------------------------------------------------------------
 QUICK INSTALL
 ----------------------------------------------------------------
-1. DSM -> Package Center -> Manual Install -> upload YandexDisk-ARM-1.2.3.spk.
+1. DSM -> Package Center -> Manual Install -> upload YandexDisk-ARM-2.0.3.spk.
    (On the warning about an unknown publisher, confirm install.)
 2. After install, grant the system user `sc-yandexdisk` read/write on your
    sync shared folder (Control Panel -> Shared Folder -> Edit -> Permissions).
-3. Configure Yandex Disk auth + sync folder over SSH:
-       sudo -u sc-yandexdisk yandex-disk setup
-   (Run `rclone authorize "yandex"` on a desktop with a browser, paste the
-   token, then set dir=/remote in config.cfg — see README.md.)
-4. Start:  synopkg start YandexDisk   (or via Package Center).
-5. Validate on the NAS:
+3. Open YandexDisk in DSM and configure everything in the UI (no SSH): click
+   "Add folder", set the local folder + remote (yandexdisk:), then paste the
+   OAuth token from `rclone authorize "yandex"` (run on a desktop with a
+   browser). Click "Sync now" to run the first sync. See README.md.
+4. Schedule periodic sync in DSM Task Scheduler with the command the UI shows
+   (Control Panel -> Task Scheduler, user root):
+       sudo -u sc-yandexdisk /usr/local/bin/yandex-disk sync
+5. (Optional) Validate on the NAS over SSH:
        ./test-on-nas-install.sh
        ./test-on-nas-functional.sh
 

@@ -1,0 +1,3 @@
+Content-Type: application/json; charset=utf-8
+
+{"dir":"<WORK>/g7local","remote":"yandexdisk:","clean_thumbs":"0","interval":"","token_configured":true}

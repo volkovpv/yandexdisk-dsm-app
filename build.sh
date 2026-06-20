@@ -52,7 +52,7 @@ RCLONE_BIN_SHA256="646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17c
 # #!/bin/sh scripts (incl. the sourced common.sh lib) -> validate with dash.
 # All package scripts are POSIX sh now (the old bash yandex-cleaner is gone).
 # test/ gate scripts are POSIX sh too and are linted with the same rigour.
-POSIX_SH="spk/package/common.sh spk/package/yandex-disk spk/scripts/start-stop-status spk/scripts/yandex-logger spk/scripts/preupgrade spk/scripts/postupgrade spk/package/ui/scripts/clear_log.cgi spk/package/ui/scripts/log.cgi spk/package/ui/scripts/status.cgi spk/package/ui/scripts/sync_log.cgi test/check-rclone-contract.sh test/check-version-drift.sh test/check-reproducible.sh test/check-coverage.sh test/mutate.sh test/fake-rclone test/run-hermetic.sh"
+POSIX_SH="spk/package/common.sh spk/package/yandex-disk spk/scripts/start-stop-status spk/scripts/yandex-logger spk/scripts/preupgrade spk/scripts/postupgrade spk/package/ui/scripts/clear_log.cgi spk/package/ui/scripts/diag.cgi spk/package/ui/scripts/log.cgi spk/package/ui/scripts/settings.cgi spk/package/ui/scripts/status.cgi spk/package/ui/scripts/sync_log.cgi test/check-rclone-contract.sh test/check-version-drift.sh test/check-ui-contract.sh test/check-reproducible.sh test/check-coverage.sh test/mutate.sh test/fake-rclone test/run-hermetic.sh"
 
 sha_of() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
@@ -145,6 +145,12 @@ echo "  ok (posix) checkbashisms clean"
 command -v python3 >/dev/null 2>&1 \
     || { echo "ERROR: python3 is required (validates spk/conf JSON control files)" >&2; exit 1; }
 python3 -c 'import json; json.load(open("spk/conf/privilege")); print("  ok (json) spk/conf/privilege")'
+
+# UI contract gate: the package must ship the CURRENT dashboard UI, not a stale or
+# broken main.js. Nothing else validates the UI (every other check is shell-only),
+# so the 2.0.0 "old tabs after upgrade" class of bug — a wrong main.js shipped
+# green — is caught here, off-NAS, instead of on the device.
+"$SH_POSIX" test/check-ui-contract.sh
 
 # Version drift gate: INFO / CHANGELOG-ARM.md / RELEASE-INFO-ARM.txt / README
 # must agree on the package and engine versions (single source of truth).
