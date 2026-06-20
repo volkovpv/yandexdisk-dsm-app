@@ -32,8 +32,9 @@
   // состояния (design/spec.md §2). Источник строк — sync.state через status.cgi:
   // успех пишется как «idle|…|ok|…», ошибка как «error|…|<rc>» (yandex-disk
   // run_bisync/write_sync_state). Отсутствие sync.state -> «ещё не выполнялась».
-  // warning/syncing на сегодня бэкендом не выставляются: warning — задел под
-  // частичный успех, syncing показывается оптимистично на время POST sync.
+  // warning/syncing на сегодня не используются: warning — задел под частичный успех;
+  // syncing остался в словаре, но кнопка «Синхронизировать сейчас» работает fire-and-forget
+  // (лишь стартует фоновый прогон, см. syncNow) и спиннер-состояние НЕ включает.
   const STATUS = {
     success:  { label: "Успешно",                    cls: "yd-st-success",  icon: "check" },
     warning:  { label: "Предупреждение",             cls: "yd-st-warning",  icon: "warn"  },
@@ -59,33 +60,48 @@
   };
 
   // ─── CSRF (план §6/§7, design/spec.md §4) ─────────────────────────────────
-  // Мутации settings.cgi требуют DSM SynoToken. CGI проверяет лишь НАЛИЧИЕ
-  // (X-SYNO-TOKEN или ?SynoToken=); валидность сессии обеспечивает webman за
-  // DSM-логином — это NAS-проверка (§9). Достаём токен из контекста DSM
-  // послойно; если не нашли, POST честно вернёт 403 (показываем ошибку).
-  function synoToken() {
+  // Мутации settings.cgi требуют DSM SynoToken. При ВКЛЮЧЁННОЙ защите от CSRF
+  // (Панель управления → Безопасность) webman режет POST без валидного токена СВОЕЙ
+  // страницей 403 (HTML) — ещё ДО CGI; фронт давился ею в r.json() как «Некорректный
+  // ответ сервера», и не работали ни «Синхронизировать сейчас», ни set-folder/set-token/
+  // check-folder. Надёжный источник токена уже залогиненной сессии (подтверждено на DSM 7)
+  // — /webman/login.cgi?enable_syno_token=yes: по сессионной cookie, БЕЗ логина/пароля,
+  // отдаёт {"SynoToken":…,"success":true}. Тянем один раз и кэшируем на жизнь страницы;
+  // SDS-API/глобаль/cookie оставлены быстрыми фолбэками для сборок, где они доступны.
+  // Пустой результат НЕ кэшируем — чтобы дать шанс повторной попытке.
+  let _csrfToken = null;
+  async function synoToken() {
+    if (_csrfToken) return _csrfToken;
     try {
       if (window.SYNO && SYNO.SDS && SYNO.SDS.Session && typeof SYNO.SDS.Session.getToken === "function") {
         const t = SYNO.SDS.Session.getToken();
-        if (t) return t;
+        if (t) return (_csrfToken = t);
       }
     } catch (e) { /* SUI-контекст недоступен вне DSM — пробуем дальше */ }
-    try { if (window._SYNO_TOKEN) return window._SYNO_TOKEN; } catch (e) { /* ignore */ }
+    try { if (window._SYNO_TOKEN) return (_csrfToken = window._SYNO_TOKEN); } catch (e) { /* ignore */ }
+    try {
+      const r = await fetch("/webman/login.cgi?enable_syno_token=yes", { credentials: "same-origin" });
+      const d = await r.json().catch(() => null);
+      if (d && d.SynoToken) return (_csrfToken = d.SynoToken);
+    } catch (e) { /* эндпоинта может не быть на иных сборках — пробуем cookie */ }
     const m = (document.cookie || "").match(/(?:^|;\s*)SynoToken=([^;]+)/);
-    return m ? decodeURIComponent(m[1]) : "";
+    return m ? (_csrfToken = decodeURIComponent(m[1])) : "";
   }
 
   // GET текстового CGI (status.cgi / log.cgi / sync_log.cgi) — существующие
-  // эндпоинты данных, контракт «ключ вкладки = имя CGI» сохранён.
+  // эндпоинты данных, контракт «ключ вкладки = имя CGI» сохранён. cache:"no-store" —
+  // это динамика: у status.cgi нет анти-кэш заголовков, и без этого браузер мог бы
+  // подсунуть из кэша старое состояние при перечитывании (loadAll на mount/переоткрытии).
   async function getText(name) {
-    const r = await fetch(BASE + name, { credentials: "same-origin" });
+    const r = await fetch(BASE + name, { credentials: "same-origin", cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
     return r.text();
   }
 
-  // GET settings.cgi?action=… -> JSON. Без мутации, CSRF не нужен.
+  // GET settings.cgi?action=… -> JSON. Без мутации, CSRF не нужен. cache:"no-store" —
+  // конфиг читаем всегда свежим (после set-folder/set-token перечитываем через loadAll).
   async function settingsGet(action) {
-    const r = await fetch(BASE + "settings.cgi?action=" + action, { credentials: "same-origin" });
+    const r = await fetch(BASE + "settings.cgi?action=" + action, { credentials: "same-origin", cache: "no-store" });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
     return data;
@@ -95,7 +111,7 @@
   // токен — вербатим в stdin set-token, см. settings.cgi). Несём SynoToken и в
   // заголовке, и параметром (CGI принимает любой). Бросает на !ok.
   async function settingsPost(action, body) {
-    const tok = synoToken();
+    const tok = await synoToken();
     let url = BASE + "settings.cgi?action=" + action;
     if (tok) url += "&SynoToken=" + encodeURIComponent(tok);
     const headers = { "Content-Type": "text/plain; charset=utf-8" };
@@ -185,6 +201,7 @@
         folderOwner: "",
         syncing: false,
         syncError: null,
+        syncMsg: null,   // подтверждение «синхронизация запущена» (fire-and-forget)
         // Модалки: null | 'dialog' | 'log' | 'history'.
         modal: null,
         dialogMode: "add",
@@ -259,20 +276,24 @@
           if (r && r.owner && r.owner !== "?") this.folderOwner = r.owner;
         } catch (e) { /* owner необязателен */ }
       },
-      // «Синхронизировать сейчас» — тот же sync, что и Планировщик задач. Пока POST
-      // в полёте, показываем «Синхронизация…» (спиннер); по завершении — перечитываем.
+      // «Синхронизировать сейчас» — fire-and-forget. settings.cgi запускает тот же sync, что и
+      // Планировщик задач, ОТВЯЗАННЫМ процессом и отвечает сразу. UI лишь СТАРТУЕТ прогон и НЕ
+      // ждёт его: полный bisync большой папки идёт минутами, окну незачем висеть со спиннером.
+      // По успеху показываем «запущена, идёт в фоне»; результат пользователь увидит позже,
+      // переоткрыв окно (на mount loadAll перечитает status.cgi). Так же ведёт себя запуск из
+      // Планировщика задач — он просто работает в фоне, а статус смотрят отдельно.
       async syncNow() {
         if (!this.canSync) return;
-        this.syncing = true;
-        this.visualStatus = "syncing";
+        this.syncing = true;        // кратко гасим кнопку на время POST (~30 мс)
         this.syncError = null;
+        this.syncMsg = null;
         try {
-          await settingsPost("sync", "");
+          await settingsPost("sync", "");   // стартует фоновый прогон и СРАЗУ возвращается
+          this.syncMsg = "Синхронизация запущена — выполняется в фоне. Обновите окно позже, чтобы увидеть результат, или откройте журнал rclone.";
         } catch (e) {
-          this.syncError = (e && e.message) || "Синхронизация завершилась с ошибкой";
+          this.syncError = (e && e.message) || "Не удалось запустить синхронизацию";
         } finally {
           this.syncing = false;
-          await this.loadAll();
         }
       },
 
@@ -290,12 +311,19 @@
         try { this.historyText = await getText("log.cgi"); }
         catch (e) { this.historyText = "Не удалось загрузить историю: " + ((e && e.message) || e); }
       },
-      // Очистка истории состояний — существующий clear_log.cgi (CSRF на нём нет,
-      // как и раньше). Сам журнал rclone не трогаем (самоочищается, нужен для диагностики).
+      // Очистка истории состояний — существующий clear_log.cgi. Это POST, значит под
+      // включённой CSRF-защитой webman тоже требует SynoToken (иначе 403) — несём его,
+      // как в settingsPost. Сам журнал rclone не трогаем (самоочищается, нужен для диагностики).
       async clearHistory() {
         if (!confirm("Очистить историю синхронизации?")) return;
         try {
-          await fetch(BASE + "clear_log.cgi", { method: "POST", credentials: "same-origin" });
+          const tok = await synoToken();
+          let url = BASE + "clear_log.cgi";
+          if (tok) url += "?SynoToken=" + encodeURIComponent(tok);
+          await fetch(url, {
+            method: "POST", credentials: "same-origin",
+            headers: tok ? { "X-SYNO-TOKEN": tok } : {},
+          });
           this.historyText = await getText("log.cgi");
         } catch (e) {
           alert("Ошибка очистки: " + ((e && e.message) || e));
@@ -526,6 +554,7 @@
                       </button>
                     </div>
                     <div class="yd-note-err" v-if="syncError" style="margin-top:8px">{{ syncError }}</div>
+                    <div class="yd-ok-hint" v-if="syncMsg" style="margin-top:8px">✓ {{ syncMsg }}</div>
                   </div>
                 </div>
 

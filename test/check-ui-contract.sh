@@ -80,10 +80,16 @@ done
 grep -q 'settings\.cgi' "$MAIN" || fail "main.js не обращается к settings.cgi (нет нового потока настройки)"
 grep -q 'get-config'    "$MAIN" || fail "main.js не использует действие get-config (преднаполнение формы)"
 
-# 5) Каждый CGI, который зовёт main.js, реально лежит в пакете и является sh-скриптом.
+# 5) Каждый ПАКЕТНЫЙ CGI, который зовёт main.js, реально лежит в пакете и является
+#    sh-скриптом. ИСКЛЮЧАЕМ системные эндпоинты DSM (вид /webman/<name>.cgi, напр.
+#    login.cgi — источник SynoToken для CSRF): это платформенные URL, их в пакете НЕТ и
+#    быть не должно. Различаем по форме ссылки: пакетные CGI зовутся по голому имени (через
+#    BASE = /webman/3rdparty/<pkg>/scripts/), системные — полным путём /webman/<name>.cgi.
+SYS_CGIS=$(grep -oE '/webman/[a-z_]+\.cgi' "$MAIN" | sed 's#.*/##' | sort -u)
 CGIS=$(grep -oE '[a-z_]+\.cgi' "$MAIN" | sort -u)
 [ -n "$CGIS" ] || fail "main.js не ссылается ни на один CGI (подозрительно)"
 for cgi in $CGIS; do
+    case " $SYS_CGIS " in *" $cgi "*) continue ;; esac   # системный эндпоинт DSM — не пакетный CGI
     f="$UIDIR/scripts/$cgi"
     [ -f "$f" ] || fail "main.js зовёт $cgi, но $f отсутствует в пакете"
     head -1 "$f" | grep -q '^#!/bin/sh' || fail "$f не является #!/bin/sh-скриптом"
