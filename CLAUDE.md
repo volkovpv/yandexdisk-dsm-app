@@ -1,7 +1,7 @@
 # CLAUDE.md — канон проекта yandexdisk-dsm-app
 
 DSM-пакет (.spk) «Яндекс Диск» для ARM64 Synology NAS: POSIX-sh обёртка над rclone bisync.
-Полные правила: docs/deterministic-result-guideline.md и -2.md. Здесь — обязательный минимум.
+Полные правила: docs/deterministic-result-guideline.md. Здесь — обязательный минимум.
 
 ## Гейты (после любой нетривиальной правки, до сдачи)
     bash build.sh && bash test/run-hermetic.sh && sh test/check-coverage.sh && bash test/check-reproducible.sh

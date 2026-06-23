@@ -34,6 +34,7 @@ REL_RCV=$(grep -o 'rclone v[0-9][0-9.]*' RELEASE-INFO-ARM.txt | sort -u | grep -
 [ -z "$REL_RCV" ] \
     || fail "RELEASE-INFO-ARM.txt mentions '$REL_RCV', build.sh pins $RCV"
 
+[ -f README.md ] || fail "README.md not found at repo root"
 MD_RCV=$(grep -o '`rclone` v[0-9][0-9.]*' README.md | sort -u | grep -v "^\`rclone\` $RCV\$" || true)
 [ -z "$MD_RCV" ] \
     || fail "README.md mentions '$MD_RCV', build.sh pins $RCV"

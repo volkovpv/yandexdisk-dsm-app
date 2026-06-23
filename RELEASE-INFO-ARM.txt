@@ -75,4 +75,4 @@ QUICK INSTALL
        ./test-on-nas-functional.sh
 
 See README.md for the full model list, rclone setup, and DSM shared-folder
-permission steps. Archived x86 docs: docs/README-x86-legacy.md.
+permission steps. Documentation map: docs/README.md.
