@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# build.sh — rebuild the Yandex Disk (ARM) .spk from sources, with static checks.
+# build.sh — rebuild the Yandex Disk .spk from sources, with static checks.
+#
+# Default target is the ARM .spk (byte-reproducible Release asset). Setting
+# YD_ARCH=amd64 builds the x86_64 variant (same rclone $RCLONE_VERSION, amd64
+# binary, x86_64 arch= in INFO) used by the e2e VM harness — see
+# docs/e2e-selfheal-plan.md. The arm64 default is unchanged byte-for-byte.
 #
 # Produces (from spk/), where <version> is the spk/INFO version:
 #   spk/package/rclone                    native arm64 rclone, fetched + SHA256-verified (NOT in git)
@@ -39,15 +44,33 @@ cd "$ROOT"
 # assets are self-describing and old revisions aren't silently overwritten.
 VER="$(sed -n 's/^version="\(.*\)"/\1/p' spk/INFO)"
 [ -n "$VER" ] || { echo "ERROR: version missing in spk/INFO" >&2; exit 1; }
-SPK="YandexDisk-ARM-${VER}.spk"
 PKG_TGZ="spk/package.tgz"
 
 # rclone release pinned for this build (must stay in sync with INFO/README).
 RCLONE_VERSION="v1.74.3"
-RCLONE_ZIP="rclone-${RCLONE_VERSION}-linux-arm64.zip"
+
+# Target CPU architecture profile. Each profile pins its OWN rclone zip+binary
+# SHA256 and the expected ELF e_machine; only the GOARCH differs, the same rclone
+# $RCLONE_VERSION is used for both. arm64 (default) reproduces the published ARM
+# .spk byte-for-byte; amd64 builds the x86_64 .spk for the e2e VM harness.
+YD_ARCH="${YD_ARCH:-arm64}"
+case "$YD_ARCH" in
+    arm64)
+        RCLONE_GOARCH="arm64"; SPK_TAG="ARM"
+        RCLONE_ZIP_SHA256="8f8d47446e061f80c3256659fe8e21f56d72d96aaefe1275d088ea5eb6b42aa7"  # official zip
+        RCLONE_BIN_SHA256="646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17c923"  # extracted binary
+        ELF_MACHINE="183"; ELF_ARCH_NAME="AArch64" ;;
+    amd64)
+        RCLONE_GOARCH="amd64"; SPK_TAG="x86_64"
+        RCLONE_ZIP_SHA256="dbee7ccd7a5d617e4ed4cd4555c16669b511abfe8d31164f61be35ac9e999bd2"  # official zip
+        RCLONE_BIN_SHA256="9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0"  # extracted binary
+        ELF_MACHINE="62"; ELF_ARCH_NAME="x86-64" ;;
+    *)
+        echo "ERROR: unsupported YD_ARCH='$YD_ARCH' (use arm64 or amd64)" >&2; exit 1 ;;
+esac
+SPK="YandexDisk-${SPK_TAG}-${VER}.spk"
+RCLONE_ZIP="rclone-${RCLONE_VERSION}-linux-${RCLONE_GOARCH}.zip"
 RCLONE_ZIP_URL="https://downloads.rclone.org/${RCLONE_VERSION}/${RCLONE_ZIP}"
-RCLONE_ZIP_SHA256="8f8d47446e061f80c3256659fe8e21f56d72d96aaefe1275d088ea5eb6b42aa7"  # official zip
-RCLONE_BIN_SHA256="646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17c923"  # extracted binary
 
 # #!/bin/sh scripts (incl. the sourced common.sh lib) -> validate with dash.
 # All package scripts are POSIX sh now (the old bash yandex-cleaner is gone).
@@ -161,12 +184,13 @@ echo "  INFO version: $VER  ->  $SPK"
 echo "==> Fetch / verify rclone (not committed to git)"
 fetch_rclone
 
-# rclone must be a native aarch64 ELF (e_machine 183) or the package is useless.
-# Hard failure: an x86 binary inside an ARM package is defective, not a warning.
+# rclone must be a native ELF for the target profile (e_machine 183=AArch64 /
+# 62=x86-64) or the package is useless. Hard failure: a wrong-arch binary inside
+# the package is defective, not a warning.
 EM="$(od -An -tu1 -j18 -N1 spk/package/rclone 2>/dev/null | tr -d ' ')"
-[ "$EM" = "183" ] \
-    || { echo "ERROR: rclone e_machine=$EM, expected 183 = AArch64 (wrong-arch binary)" >&2; exit 1; }
-echo "  ok (elf)  rclone e_machine=183 (AArch64)"
+[ "$EM" = "$ELF_MACHINE" ] \
+    || { echo "ERROR: rclone e_machine=$EM, expected $ELF_MACHINE = $ELF_ARCH_NAME ($YD_ARCH profile) — wrong-arch binary" >&2; exit 1; }
+echo "  ok (elf)  rclone e_machine=$ELF_MACHINE ($ELF_ARCH_NAME)"
 
 # Marker contract: the wrapper's counters/self-heal grep exact substrings that
 # must exist inside this rclone build (else an engine bump silently breaks them).
@@ -192,8 +216,25 @@ echo "==> Build $SPK (GNU tar, root-owned, reproducible)"
 # INFO is the lexicographically smallest name (under LC_ALL=C), so it STILL ends
 # up first in the stream, preserving the DSM "INFO first" contract. --mtime pins
 # timestamps so a clean rebuild reproduces the same archive and the same SHA-256.
-tar -C spk --format=gnu --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -cf "$ROOT/$SPK" \
-    INFO LICENSE LICENSE.rclone PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG conf scripts package.tgz
+if [ "$YD_ARCH" = "arm64" ]; then
+    tar -C spk --format=gnu --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -cf "$ROOT/$SPK" \
+        INFO LICENSE LICENSE.rclone PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG conf scripts package.tgz
+else
+    # x86_64: INFO must advertise x86_64 platforms (else Package Center refuses
+    # the package on an x86_64 NAS). The on-disk spk/INFO stays the ARM source of
+    # truth (version-drift / reproducible gates read it); patch arch+displayname
+    # into a temp copy for THIS archive only. --sort=name still places INFO first
+    # (DSM "INFO first" contract). The platform list is deliberately broad so the
+    # package installs whatever x86_64 model / XPEnology loader the VM reports.
+    STAGE="$(mktemp -d)"
+    sed -e 's/^arch=.*/arch="apollolake avoton braswell broadwell broadwellnk broadwellnkv2 bromolow cedarview denverton dockerx64 geminilake grantley kvmx64 purley r1000 v1000"/' \
+        -e 's/^displayname=.*/displayname="Yandex Disk (x86_64)"/' \
+        spk/INFO > "$STAGE/INFO"
+    tar --format=gnu --sort=name --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -cf "$ROOT/$SPK" \
+        -C "$STAGE" INFO \
+        -C "$ROOT/spk" LICENSE LICENSE.rclone PACKAGE_ICON.PNG PACKAGE_ICON_256.PNG conf scripts package.tgz
+    rm -rf "$STAGE"
+fi
 
 echo "==> Checksum"
 sha256sum "$SPK" > "$SPK.sha256"
