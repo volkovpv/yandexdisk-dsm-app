@@ -6,8 +6,9 @@ name: Build SPK
 # (две сборки должны дать одинаковый SHA256). Готовый .spk доступен как workflow
 # artifact во вкладке Actions.
 #
-# Релиз: на push в main (т.е. после мержа PR) собранный версионированный .spk +
-# .sha256 публикуются как ассеты GitHub Release. Версия — единственный источник
+# Релиз: на push в main (т.е. после мержа PR) собранные версионированные .spk +
+# .sha256 ОБЕИХ архитектур (ARM и x86_64) публикуются как ассеты GitHub Release.
+# Версия — единственный источник
 # spk/INFO (она дрейф-гейтится по INFO/CHANGELOG/RELEASE-INFO). Публикация
 # идемпотентна и привязана к bump версии: если релиз v<версия> уже существует
 # (мерж без поднятия версии — правки доков/тестов и т.п.), шаг ничего не делает.
@@ -47,13 +48,31 @@ jobs:
       - name: Reproducibility self-check (rebuild twice, compare SHA256)
         run: bash test/check-reproducible.sh
 
-      - name: Upload .spk as workflow artifact
+      # x86_64-сборка для Intel/AMD Synology и e2e-VM. Тот же build.sh с профилем
+      # YD_ARCH=amd64: свой rclone amd64 + 2×SHA256, ELF-гейт e_machine=62, x86_64
+      # arch= в INFO. Запускается ПОСЛЕ ARM-репро-чека, чтобы тот стартовал с
+      # чистого arm64-состояния; ARM-.spk уже лежит в корне и не перезаписывается
+      # (другое имя файла). Все статические + контрактные гейты прогоняются снова
+      # уже на amd64-бинаре (включая 6 лог-маркеров rclone).
+      - name: Build x86_64 .spk (YD_ARCH=amd64)
+        run: YD_ARCH=amd64 bash build.sh
+
+      - name: Upload ARM .spk as workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: YandexDisk-ARM-spk
           path: |
             YandexDisk-ARM-*.spk
             YandexDisk-ARM-*.spk.sha256
+          if-no-files-found: error
+
+      - name: Upload x86_64 .spk as workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: YandexDisk-x86_64-spk
+          path: |
+            YandexDisk-x86_64-*.spk
+            YandexDisk-x86_64-*.spk.sha256
           if-no-files-found: error
 
       # Релиз только из main (после мержа PR) и только при новой версии.
@@ -91,16 +110,22 @@ jobs:
           {
             echo
             echo "---"
+            echo "Выберите \`.spk\` под архитектуру процессора вашего Synology:"
+            echo "- **ARM64** (aarch64, напр. DS124): \`YandexDisk-ARM-${VER}.spk\`"
+            echo "- **x86_64** (Intel/AMD): \`YandexDisk-x86_64-${VER}.spk\`"
+            echo
             echo "Проверка целостности скачанного \`.spk\`:"
             echo '```sh'
-            echo "sha256sum -c YandexDisk-ARM-${VER}.spk.sha256"
+            echo "sha256sum -c YandexDisk-ARM-${VER}.spk.sha256      # ARM"
+            echo "sha256sum -c YandexDisk-x86_64-${VER}.spk.sha256   # x86_64"
             echo '```'
             echo "Полный список изменений — в \`CHANGELOG-ARM.md\`."
           } >> release-notes.md
 
           gh release create "$TAG" \
             YandexDisk-ARM-*.spk YandexDisk-ARM-*.spk.sha256 \
-            --title "Yandex Disk (ARM) ${VER}" \
+            YandexDisk-x86_64-*.spk YandexDisk-x86_64-*.spk.sha256 \
+            --title "Yandex Disk ${VER} (ARM + x86_64)" \
             --target "${GITHUB_SHA}" \
             --notes-file release-notes.md
-          echo "Опубликован релиз $TAG с ассетом YandexDisk-ARM-${VER}.spk"
+          echo "Опубликован релиз $TAG с ассетами YandexDisk-{ARM,x86_64}-${VER}.spk"
