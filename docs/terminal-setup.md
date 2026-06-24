@@ -1,4 +1,4 @@
-# Настройка через терминал (SSH) — Yandex Disk (ARM) для Synology DSM
+# Настройка через терминал (SSH) — Yandex Disk для Synology DSM (ARM + x86_64)
 
 > Аудитория: пользователи и разработчики (П/Р).
 > Статус: актуально (запасной/диагностический путь). Основной путь настройки —
@@ -104,7 +104,7 @@
 
 | № | Команда | Что делает / примечания |
 |---|---------|--------------------------|
-| 16 | `./build.sh` | Статические проверки скриптов (`dash -n` + `shellcheck`), докачка и сверка SHA-256 rclone, сборка воспроизводимого `YandexDisk-ARM-<версия>.spk` (+ `.sha256`). |
+| 16 | `bash build.sh` (или `YD_ARCH=amd64 bash build.sh`) | Статические проверки скриптов (`dash -n` + `shellcheck`), докачка и сверка SHA-256 rclone, сборка воспроизводимого `YandexDisk-ARM-<версия>.spk` (для x86_64 — `YandexDisk-x86_64-…`) (+ `.sha256`). |
 | 17 | `sha256sum -c YandexDisk-ARM-<версия>.spk.sha256` | Проверить контрольную сумму готового `.spk`. |
 | 18 | `bash build.sh && bash test/run-hermetic.sh && sh test/check-coverage.sh && bash test/check-reproducible.sh` | Полный гейт качества после нетривиальной правки (см. `CLAUDE.md` / `docs/ai-workflow.md`). |
 | 19 | `sh test/mutate.sh` | Мутационный гейт (тяжёлый, ~2 мин; on-demand / ночью в CI). Порог `YD_MUT_MIN` (по умолч. 90). |

@@ -1,6 +1,6 @@
 package="YandexDisk"
 displayname="Yandex Disk (ARM)"
-version="2.0.3"
+version="2.0.4"
 os_min_ver="7.0-40000"
 maintainer="volkovpv"
 maintainer_url="https://github.com/volkovpv"

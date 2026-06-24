@@ -1,29 +1,37 @@
 ================================================================
-  Yandex Disk (ARM) for Synology DSM — RELEASE INFO
+  Yandex Disk for Synology DSM (ARM + x86_64) — RELEASE INFO
 ================================================================
 
 Package           : YandexDisk
-Display name      : Yandex Disk (ARM)
-Version           : 2.0.3  (SemVer; "ARM" в displayname, т.к. версия для DSM — только числовая. См. CHANGELOG-ARM.md -> «Версионирование»)
-Build date        : 2026-06-20
+Display name      : Yandex Disk (ARM)  /  Yandex Disk (x86_64)
+Version           : 2.0.4  (SemVer; одна версия на обе архитектуры — суффикс арх. в displayname и имени .spk, версия для DSM числовая. См. CHANGELOG-ARM.md -> «Версионирование»)
+Build date        : 2026-06-24
 DSM minimum       : 7.0-40000
 
 ----------------------------------------------------------------
-ARCHITECTURE
+ARCHITECTURE (two builds from one source, same version)
 ----------------------------------------------------------------
-Target            : ARM64 / aarch64 / ARMv8
-Sync engine       : rclone v1.74.3 (native linux-arm64, statically linked)
+Targets           : ARM64 / aarch64 / ARMv8   -> YandexDisk-ARM-<ver>.spk
+                    x86_64 / amd64 (Intel/AMD) -> YandexDisk-x86_64-<ver>.spk
+Sync engine       : rclone v1.74.3 (native linux-arm64 / linux-amd64, static)
 Yandex backend    : rclone built-in "yandex" backend (two-way bisync)
 
-Why rclone        : the official `yandex-disk` CLI is x86-only (amd64/i386)
-                    and has NO ARM build, so this port replaces it with the
-                    native arm64 rclone engine, wrapped to keep the same
-                    start/stop/status control surface and DSM UI.
+Why rclone        : on ARM there is NO official `yandex-disk` CLI at all (it is
+                    x86-only, no sources). The same rclone engine + DSM UI is
+                    reused for the x86_64 build so both architectures share one
+                    codebase and the no-SSH / no-daemon control surface; x86_64
+                    users who prefer the official Yandex daemon still have it as
+                    an alternative.
+Build profile     : `bash build.sh` (arm64, default) or
+                    `YD_ARCH=amd64 bash build.sh` (x86_64). Each profile pins its
+                    own rclone zip+binary SHA256 and an ELF arch gate
+                    (e_machine 183=AArch64 / 62=x86-64).
 
 ----------------------------------------------------------------
 SUPPORTED SYNOLOGY PLATFORMS (INFO arch= field)
 ----------------------------------------------------------------
-rtd1619b rtd1296 armada37xx armada38x alpine4k
+ARM build (YandexDisk-ARM-<ver>.spk):
+  rtd1619b rtd1296 armada37xx armada38x alpine4k
 
   64-bit (aarch64) — fully supported by this arm64 build:
     rtd1619b   : DS124, DS223j, DS223, DS123
@@ -37,29 +45,47 @@ rtd1619b rtd1296 armada37xx armada38x alpine4k
 
   Primary tested target: Synology DS124 (Realtek RTD1619B, aarch64).
 
-----------------------------------------------------------------
-ARTIFACT
-----------------------------------------------------------------
-File              : YandexDisk-ARM-2.0.3.spk   (GitHub Release asset — НЕ в git)
-Size              : 24360960 bytes (~23 MB)
-SHA-256 (.spk)    : fb5f7e7c1d492f479643cc6cd17d7945abde77cd1c0d6c9d298ccef3af941b9c
-SHA-256 (rclone)  : 646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17c923
+x86_64 build (YandexDisk-x86_64-<ver>.spk):
+  apollolake avoton braswell broadwell broadwellnk broadwellnkv2 bromolow
+  cedarview denverton dockerx64 geminilake grantley kvmx64 purley r1000 v1000
 
-Имя файла .spk     : содержит версию (YandexDisk-ARM-<версия>.spk) — собирается
-                    build.sh из spk/INFO, так что ассеты релиза самоописательны.
-Распространение    : .spk и сырой rclone больше не коммитятся в репозиторий —
-                    они раздаются как GitHub Release assets. Сборка из исходников:
-                    `./build.sh` (докачивает rclone по SHA256 и пересобирает .spk).
-                    Сборка воспроизводима байт-в-байт (pinned mtime + gzip -n),
-                    так что этот SHA-256 повторяется при чистой пересборке.
+  All 64-bit Intel/AMD Synology platforms; the broad list also covers whatever
+  model / XPEnology loader an x86_64 VM reports (used by the e2e test harness).
+
+----------------------------------------------------------------
+ARTIFACTS (both published as GitHub Release assets — НЕ в git)
+----------------------------------------------------------------
+ARM build:
+  File            : YandexDisk-ARM-2.0.4.spk
+  Size            : 24360960 bytes (~23 MB)
+  SHA-256 (.spk)  : 46ff32e50e3c26f45465da2914afe2f522355837908d382a16384ae61a2be5dd
+  SHA-256 (rclone): 646d2db7e701a4d41d39ed38a71f63373ab051b270ee5f0d6ae14b24cc17c923
+
+x86_64 build:
+  File            : YandexDisk-x86_64-2.0.4.spk
+  Size            : 26992640 bytes (~26 MB)
+  SHA-256 (.spk)  : 70fc8fc9c9be041fd127b5b2df72938f30afdefc42e4870a8a625c0aa5b07f5e
+  SHA-256 (rclone): 9700aa1273ac73d6d0833c43ba63fe830516422cb131960b8c1a24ced789cba0
+
+Имя файла .spk     : содержит версию и архитектуру (YandexDisk-ARM-<версия>.spk /
+                    YandexDisk-x86_64-<версия>.spk) — собирается build.sh из spk/INFO,
+                    так что ассеты релиза самоописательны.
+Распространение    : .spk и сырой rclone не коммитятся в репозиторий — раздаются как
+                    GitHub Release assets. Сборка из исходников: `bash build.sh`
+                    (ARM, по умолчанию) или `YD_ARCH=amd64 bash build.sh` (x86_64);
+                    оба профиля докачивают rclone по SHA256 и пересобирают .spk
+                    воспроизводимо (pinned mtime + gzip -n), так что эти SHA-256
+                    повторяются при чистой пересборке.
 
 Verify:
-    sha256sum -c YandexDisk-ARM-2.0.3.spk.sha256
+    sha256sum -c YandexDisk-ARM-2.0.4.spk.sha256       # ARM
+    sha256sum -c YandexDisk-x86_64-2.0.4.spk.sha256    # x86_64
 
 ----------------------------------------------------------------
 QUICK INSTALL
 ----------------------------------------------------------------
-1. DSM -> Package Center -> Manual Install -> upload YandexDisk-ARM-2.0.3.spk.
+1. DSM -> Package Center -> Manual Install -> upload the .spk for your NAS CPU:
+   YandexDisk-ARM-2.0.4.spk (ARM64) or YandexDisk-x86_64-2.0.4.spk (Intel/AMD).
    (On the warning about an unknown publisher, confirm install.)
 2. After install, grant the system user `sc-yandexdisk` read/write on your
    sync shared folder (Control Panel -> Shared Folder -> Edit -> Permissions).

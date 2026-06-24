@@ -28,7 +28,7 @@
 | `sh test/check-coverage.sh` | Построчное **покрытие** `common.sh`+`yandex-disk` герметичным набором (трассировка bash, без внешних зависимостей). Печатает % и непокрытые строки; порог `YD_COV_MIN` (по умолч. **90 %**/файл). Достигнуто: common 100 %, yandex-disk 96 % | Фаза 1 |
 | `bash test/check-reproducible.sh` | Две чистые сборки → один SHA256 (rebuild-twice-and-compare) | W3 |
 | `sh test/mutate.sh` | **Мутационный** гейт (аналог Stryker): детерминированные мутации ядра → каждая обязана уронить `run-hermetic.sh`. `mutation score = killed/(total−эквивалентные)`, порог `YD_MUT_MIN` (по умолч. **90**); вет­тированные эквиваленты — `test/mutate.equiv`. **Тяжёлый (~2 мин), on-demand/ночью**, не на каждый push | Фаза 2 |
-| CI `.github/workflows/build-spk.yml` | Статика + герметика + **покрытие** + воспроизводимость на **каждый push любой ветки** и PR; на **push в `main`** дополнительно **публикует** Release `v<версия>` с ассетом `YandexDisk-ARM-<версия>.spk` (идемпотентно — только при поднятой версии); actions запинены по commit-SHA | W6 |
+| CI `.github/workflows/build-spk.yml` | Статика + герметика + **покрытие** + воспроизводимость на **каждый push любой ветки** и PR; на **push в `main`** дополнительно **публикует** Release `v<версия>` с ассетами `YandexDisk-ARM-<версия>.spk` **и** `YandexDisk-x86_64-<версия>.spk` (`YD_ARCH=amd64`; идемпотентно — только при поднятой версии); actions запинены по commit-SHA | W6 |
 | CI `.github/workflows/mutation.yml` | Мутационный гейт **ночью + по кнопке** (`workflow_dispatch`); неблокирующий, push не задерживает | Фаза 2 |
 | `CLAUDE.md` + `.github/CODEOWNERS` | Канон агента; защищённый периметр гейтов (`build.sh`, `test/`, workflows — отдельным PR) | W8, W9 |
 
@@ -228,11 +228,12 @@ recovery в лог (см. комментарий в шапке файла).
 Задача: подготовь релиз <X.Y.Z> (<мажор/минор/патч> — обоснуй по правилам
 CHANGELOG-ARM.md «Версионирование»).
 1) Версия синхронно: spk/INFO + новая запись в CHANGELOG-ARM.md +
-   RELEASE-INFO-ARM.txt (Version, Build date, имя .spk в 3 местах).
-2) bash build.sh → впиши фактические SHA-256 и размер .spk в RELEASE-INFO.
+   RELEASE-INFO-ARM.txt (Version, Build date, имена .spk обеих арх.).
+2) bash build.sh и YD_ARCH=amd64 bash build.sh → впиши фактические SHA-256 и
+   размеры ОБОИХ .spk (ARM + x86_64) в RELEASE-INFO.
 3) Полная цепочка зелёная; затем ручная test-on-nas-functional.sh на NAS.
 4) Открой PR с этим bump; после моего одобрения и мержа в main CI сам соберёт
-   YandexDisk-ARM-<X.Y.Z>.spk, создаст тег v<X.Y.Z> и опубликует Release.
+   .spk обеих архитектур, создаст тег v<X.Y.Z> и опубликует Release.
    Релиз привязан к bump версии: пока версию в spk/INFO не подняли, мерж в main
    новый Release не создаёт (идемпотентность по существующему v<версия>).
 ```
