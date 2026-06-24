@@ -57,7 +57,7 @@ LLM по своей природе **стохастична**: один и то�
 | CRLF-гейт | скрытый CRLF в скриптах пакета | проверка `\r` по `$POSIX_SH` |
 | Валидность control-файлов | битый `spk/conf/privilege` | `python3 -c 'json.load(...)'` |
 | Целостность движка | подменённый/неполный `rclone` | SHA256 zip **и** бинарника |
-| Архитектура движка | случайно положили x86-бинарник | ELF `e_machine == 183` (hard-fail) |
+| Архитектура движка | бинарник не той арх. для профиля | ELF `e_machine` 183=arm64 / 62=amd64 по `YD_ARCH` (hard-fail) |
 | Контракт маркеров | бамп rclone сломал счётчики | `test/check-rclone-contract.sh` |
 | Дрейф версий | рассинхрон версии в доках/конфигах | `test/check-version-drift.sh` |
 | Сборка пакета | пакет не собирается/кривой `.spk` | реассембляция `package.tgz` + `.spk` |
@@ -432,7 +432,7 @@ proposer/checker как процесс.
 | 3 | Вставить `[[ -n "$LOCAL" ]]` в `yandex-disk` | `dash -n` / `checkbashisms` |
 | 4 | Заменить `--mtime` на текущее время в `build.sh` | `check-reproducible` |
 | 5 | Удалить `--exclude "@eaDir/**"` из `_bisync` | `run-hermetic` T13 |
-| 6 | Подложить x86-бинарь вместо rclone | ELF-гейт `build.sh` (exit 1) |
+| 6 | Подложить бинарь не той арх. (`e_machine` ≠ профиль `YD_ARCH`) | ELF-гейт `build.sh` (exit 1) |
 
 ### 13.4. Анти-усиления (запрещено)
 

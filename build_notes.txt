@@ -1,4 +1,4 @@
-# Build notes — ARM64 порт пакета Yandex Disk для Synology DSM
+# Build notes — пакет Yandex Disk для Synology DSM (ARM64 + x86_64)
 
 ## Целевое устройство
 - Модель:        Synology DS124
@@ -29,15 +29,22 @@ aarch64 (rtd1619b / rtd1296). Для строго 32-битных моделей
 (amd64/i386) — ARM-сборки не существует и исходников нет. Поэтому движком
 синхронизации служит rclone (open-source, MIT) с нативной сборкой под
 linux/arm64 и встроенным бэкендом Yandex Disk. Команда `yandex-disk` оставлена
-как POSIX sh-обёртка поверх `rclone bisync`. Подробности и таблица различий
-x86↔ARM — в README.md, раздел «Почему отдельная ARM-сборка и при чём тут rclone».
+как POSIX sh-обёртка поверх `rclone bisync`. Тот же движок используется и для
+x86_64-сборки (см. ниже). Подробности и таблица различий с официальным клиентом —
+в README.md, раздел «Почему rclone, а не официальный клиент».
 
-## Источник бинарника rclone
+## Источник бинарника rclone (две архитектуры)
 build.sh докачивает официальный релиз rclone и сверяет SHA-256 (отдельно zip и
 распакованного бинарника); сам бинарник в git НЕ хранится (раздаётся как
-GitHub Release asset):
-  Версия: v1.74.3
-  Zip:    https://downloads.rclone.org/v1.74.3/rclone-v1.74.3-linux-arm64.zip
-Контрольные суммы (RCLONE_ZIP_SHA256 / RCLONE_BIN_SHA256) и шаги сборки заданы
-в build.sh; .spk собирается воспроизводимо байт-в-байт (pinned mtime + gzip -n).
-См. README.md, раздел «Сборка пакета».
+GitHub Release asset). Версия одна — v1.74.3, архитектура выбирается через YD_ARCH:
+  arm64 (по умолчанию):  rclone-v1.74.3-linux-arm64.zip   (ELF e_machine 183)
+  amd64 (YD_ARCH=amd64): rclone-v1.74.3-linux-amd64.zip    (ELF e_machine 62)
+  база URL:              https://downloads.rclone.org/v1.74.3/
+Свои RCLONE_ZIP_SHA256 / RCLONE_BIN_SHA256 для каждого профиля и шаги сборки
+заданы в build.sh; .spk (YandexDisk-ARM-* / YandexDisk-x86_64-*) собирается
+воспроизводимо байт-в-байт (pinned mtime + gzip -n). См. README.md, «Сборка пакета».
+
+## Целевые x86_64-платформы Synology (поле arch= в x86_64-.spk)
+apollolake avoton braswell broadwell broadwellnk broadwellnkv2 bromolow cedarview
+denverton dockerx64 geminilake grantley kvmx64 purley r1000 v1000
+(широкий список — все 64-битные Intel/AMD Synology + любой загрузчик XPEnology в VM).
